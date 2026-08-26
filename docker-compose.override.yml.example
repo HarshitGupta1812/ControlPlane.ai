@@ -1,0 +1,6 @@
+# Copy to docker-compose.override.yml for local developer-only overrides.
+# The default compose file already enables the offline mock gateway.
+services:
+  api:
+    environment:
+      DEV_MOCK_LLM: "true"
