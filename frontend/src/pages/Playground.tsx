@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Maximize2, Paperclip, RotateCcw, Send, Shield, SlidersHorizontal, Sparkles, WandSparkles, X } from 'lucide-react'
 import { Badge, StatusDot } from '../components/Badge'
 import { PipelinePanel } from '../components/PipelinePanel'
@@ -102,8 +104,7 @@ function ResponseCard({ request, running }: { request: RequestRecord; running: b
 }
 
 function ResponseText({ text }: { text: string }) {
-  const chunks = text.split('```')
-  return <>{chunks.map((chunk, index) => index % 2 === 1 ? <pre className="response-code" key={index}>{chunk.replace(/^\w+\n/, '')}</pre> : chunk.split(/\n\n|\n/).filter(Boolean).map((paragraph, paragraphIndex) => <p key={`${index}-${paragraphIndex}`}>{paragraph.replace(/^[-*] /, '• ')}</p>))}</>
+  return <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>
 }
 function Meta({ label, value, tone, prominent = false }: { label: string; value: string; tone: 'safe' | 'warn' | 'danger' | 'info'; prominent?: boolean }) { return <div className={`meta-cell ${prominent ? 'prominent' : ''}`}><span>{label}</span><b className={`meta-${tone}`}>{value}</b></div> }
 function ActivityIcon() { return <span className="trace-activity-icon"><span /><span /><span /></span> }
