@@ -60,6 +60,8 @@ def _deterministic_answer(message: str, *, recent: list[dict], usage: dict, poli
         return f"Your latest scoped requests are: {summary}."
     if any(term in lowered for term in ("pipeline", "stage", "replay", "trace")):
         return "The pipeline has ten stages: receive, PII scan, injection scan, complexity, use-case detection, policy, routing, streaming gate, verification, and trust. Replay reads those events without re-running the model."
+    if any(term in lowered for term in ("controlplane", "provide", "services")):
+        return "ControlPlane is a governance platform. I can assist with:\n\n*   **Pipeline Stages:** Information on PII, injection, routing, and verification.\n*   **Policies:** Active rules and thresholds applied to your workspace.\n*   **Trust Scores:** Metrics evaluating the safety and accuracy of requests.\n*   **Replay & Traces:** Inspecting the event stream of any governed inference.\n\nI cannot answer unrelated general-knowledge questions."
     return "I can answer questions about ControlPlane, its governance pipeline, policies, trust scores, replay, and your own sanitized workspace activity. I cannot answer unrelated general-knowledge questions."
 
 

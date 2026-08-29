@@ -1,19 +1,143 @@
 import { useMemo, useState } from 'react'
-import { ArrowUpRight, CalendarDays, ChevronDown, Clock3, Download, Filter, GitBranch, MoreHorizontal, Search, SlidersHorizontal, X } from 'lucide-react'
+import { AlertTriangle, Clock3, Filter, Play, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Badge, StatusDot } from '../components/Badge'
-import { ActionBadge, EmptySearch, PageHeader, SearchField, SelectField } from '../components/Ui'
-import { useRequestDetail, useWorkspaceRequests } from '../lib/useRequests'
+import { ActionBadge, PageHeader, RiskBar, SearchField } from '../components/Ui'
+import { useWorkspaceRequests } from '../lib/useRequests'
 import type { RequestRecord } from '../lib/types'
 
 export function Traces() {
-  const [query, setQuery] = useState('')
-  const [action, setAction] = useState('All decisions')
-  const [selected, setSelected] = useState<RequestRecord | null>(null)
   const requests = useWorkspaceRequests()
-  const rows = useMemo(() => requests.filter((request) => `${request.id} ${request.prompt} ${request.useCase}`.toLowerCase().includes(query.toLowerCase()) && (action === 'All decisions' || request.action === action)), [query, action, requests])
-  return <div className="traces-page"><PageHeader eyebrow="Workspace / Traces" title="Request traces" description="Search the sanitized event history across your workspace."><button className="subtle-button"><CalendarDays size={14} /> Last 7 days <ChevronDown size={13} /></button><button className="subtle-button"><Download size={14} /> Export</button></PageHeader><section className="traces-card glass-panel"><div className="traces-toolbar"><SearchField value={query} onChange={setQuery} placeholder="Search request ID, prompt, or use case..." /><SelectField value={action} onChange={setAction} options={['All decisions', 'ALLOW', 'SANITIZE', 'FLAG', 'HUMAN_REVIEW', 'BLOCK']} /><button className="filter-button"><SlidersHorizontal size={14} /> More filters <span>2</span></button><div className="results-count">{rows.length} traces</div></div>{rows.length ? <div className="table-wrap"><table className="data-table traces-table"><thead><tr><th>Request ID</th><th>Prompt</th><th>Use case</th><th>Decision</th><th>Trust</th><th>Events</th><th>Latency</th><th>Created</th><th /></tr></thead><tbody>{rows.map((request) => <tr key={request.id} onClick={() => setSelected(request)}><td><div className="trace-id"><GitBranch size={14} /> {request.id}</div></td><td><span className="trace-prompt">{request.prompt}</span></td><td>{request.useCase}</td><td><ActionBadge action={request.action} /></td><td><b className={request.trust > 80 ? 'text-safe' : request.trust > 50 ? 'text-warn' : 'text-danger'}>{request.trust}</b></td><td>{request.stages.length}</td><td><span className="latency-cell"><Clock3 size={12} /> {request.latency}</span></td><td>{request.createdAt}</td><td><button className="row-menu"><MoreHorizontal size={16} /></button></td></tr>)}</tbody></table></div> : <EmptySearch query={query} />}</section>{selected && <TraceDrawer request={selected} onClose={() => setSelected(null)} />}</div>
-}
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<RequestRecord | null>(null)
+  const navigate = useNavigate()
 
-function TraceDrawer({ request, onClose }: { request: RequestRecord; onClose: () => void }) {
-  const view = useRequestDetail(request.id) ?? request
-  return <><div className="drawer-backdrop" onClick={onClose} /><aside className="trace-drawer"><div className="drawer-head"><div><div className="eyebrow">Trace detail</div><h2>{view.id}</h2></div><button className="icon-button" onClick={onClose}><X size={16} /></button></div><div className="drawer-request"><span className={`request-status ${view.tone}`}><StatusDot tone={view.tone} /></span><p>{view.prompt}</p></div><div className="drawer-summary"><div><span>Decision</span><ActionBadge action={view.action} /></div><div><span>Trust score</span><b className={view.trust > 80 ? 'text-safe' : view.trust > 50 ? 'text-warn' : 'text-danger'}>{view.trust}/100</b></div><div><span>Use case</span><b>{view.useCase}</b></div><div><span>Policy</span><b>CP-{view.useCase === 'Decision Support' ? 'DS-11' : view.useCase === 'Customer Support' ? 'CS-14' : 'IK-07'}</b></div></div><div className="drawer-section"><div className="drawer-section-title"><span>Event timeline</span><small>{view.stages.length} events</small></div><div className="drawer-timeline">{view.stages.map((stage) => <div className={`drawer-event ${stage.status}`} key={stage.id}><span className="drawer-event-dot" /><div><strong>{stage.name}</strong><small>{stage.detail}</small></div><time>{stage.duration}</time></div>)}</div></div><button className="button button-ghost drawer-replay"><ArrowUpRight size={14} /> Open in Replay</button></aside></> }
+  const filtered = useMemo(() => {
+    const term = search.toLowerCase()
+    return term ? requests.filter((r) => r.prompt.toLowerCase().includes(term) || r.id.toLowerCase().includes(term) || r.useCase.toLowerCase().includes(term)) : requests
+  }, [requests, search])
+
+  return (
+    <div className="traces-page">
+      <PageHeader title="Audit Log" description="A complete ledger of every prompt, decision, and verification check.">
+        <SearchField placeholder="Search prompts, IDs..." value={search} onChange={setSearch} />
+      </PageHeader>
+      
+      <div className="table-wrap glass-panel">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Request / Prompt</th>
+              <th>Use Case</th>
+              <th>Action</th>
+              <th>Trust Score</th>
+              <th>Risk Tags</th>
+              <th>Latency</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((request) => (
+              <tr key={request.id} className="interactive-row" onClick={() => setSelected(request)}>
+                <td>
+                  <div className="request-cell">
+                    <span className={`request-status ${request.tone}`}><StatusDot tone={request.tone} /></span>
+                    <div>
+                      <strong>{request.prompt.slice(0, 48)}{request.prompt.length > 48 ? '…' : ''}</strong>
+                      <small>{request.id}</small>
+                    </div>
+                  </div>
+                </td>
+                <td><span className="table-usecase">{request.useCase}</span></td>
+                <td><ActionBadge action={request.action} /></td>
+                <td><strong className={request.trust > 80 ? 'text-safe' : request.trust > 50 ? 'text-warn' : 'text-danger'}>{request.trust}</strong></td>
+                <td>
+                  {request.riskTags.length ? (
+                    <div className="risk-tags-cell">
+                      {request.riskTags.slice(0, 2).map((tag) => <span key={tag} className="tiny-risk-tag">{tag}</span>)}
+                      {request.riskTags.length > 2 && <span className="tiny-risk-tag">+{request.riskTags.length - 2}</span>}
+                    </div>
+                  ) : <span className="table-usecase">—</span>}
+                </td>
+                <td><span className="latency-cell"><Clock3 size={10} /> {request.latency}</span></td>
+                <td>{request.createdAt}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && <tr><td colSpan={7} className="empty-cell">No requests found matching your search.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {selected && (
+        <div className="trace-drawer">
+          <div className="trace-drawer-scrim" onClick={() => setSelected(null)} />
+          <div className="trace-drawer-content glass-panel">
+            <div className="drawer-head">
+              <div>
+                <div className="eyebrow">Request details</div>
+                <h3>{selected.id}</h3>
+              </div>
+              <div className="drawer-actions">
+                <button className="button button-crimson button-small" onClick={() => navigate(`/app/pipeline-replay?request=${selected.id}`)}>
+                  <Play size={12} fill="currentColor" /> Open in Replay
+                </button>
+                <button className="drawer-close" onClick={() => setSelected(null)}><X size={18} /></button>
+              </div>
+            </div>
+            
+            <div className="drawer-body">
+              <section className="drawer-section">
+                <h4>Prompt</h4>
+                <div className="drawer-prompt">{selected.prompt}</div>
+              </section>
+              
+              <section className="drawer-section">
+                <h4>Governance result</h4>
+                <div className="drawer-kpis">
+                  <div className="drawer-kpi">
+                    <span>Decision</span>
+                    <ActionBadge action={selected.action} />
+                  </div>
+                  <div className="drawer-kpi">
+                    <span>Trust score</span>
+                    <strong className={selected.trust > 80 ? 'text-safe' : selected.trust > 50 ? 'text-warn' : 'text-danger'}>{selected.trust}</strong>
+                  </div>
+                  <div className="drawer-kpi">
+                    <span>Use case</span>
+                    <strong>{selected.useCase}</strong>
+                  </div>
+                </div>
+              </section>
+              
+              <section className="drawer-section">
+                <h4>Detected risks</h4>
+                {selected.riskTags.length > 0 ? (
+                  <div className="drawer-risks">
+                    {selected.riskTags.map((tag) => (
+                      <div key={tag} className="drawer-risk-item">
+                        <ShieldAlert size={14} className={tag === 'privacy' || tag === 'injection' ? 'text-danger' : 'text-warn'} />
+                        <span>{tag} detected in payload</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="drawer-risk-item safe">
+                    <Sparkles size={14} className="text-safe" />
+                    <span>No risk signals detected</span>
+                  </div>
+                )}
+              </section>
+
+              {selected.response && (
+                <section className="drawer-section">
+                  <h4>Generated response</h4>
+                  <div className="drawer-response">{selected.response}</div>
+                </section>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

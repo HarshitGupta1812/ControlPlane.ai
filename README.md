@@ -71,15 +71,12 @@ See [`FILE_MANIFEST.md`](FILE_MANIFEST.md) for the complete authored-file list.
 
 - `/` — public premium crimson security-operations landing page with real procedural 3D shield/network geometry, scroll story, ten-stage graph, features, trust score, and footer links.
 - `/login` — sign in, sign up, forgot/reset states.
-- `/app` — governed Playground with persistent parameters tray, local deterministic response, risk fusion examples, and live stage events.
+- `/app` — governed Prompt Tester with persistent parameters tray, local deterministic response, risk fusion examples, and live stage events.
 - `/app/dashboard` — KPIs, sparklines, volume/trust chart, activity, violations, model routing, trust breakdown, and recent requests.
-- `/app/pipeline` — selected request event graph plus sanitized inspector.
-- `/app/replay` — read-only step-through event stream.
-- `/app/policies` — immutable policy profiles and no-LLM simulator.
+- `/app/pipeline-replay` — read-only step-through event stream and pipeline view.
 - `/app/traces` — filterable traces with detail drawer.
 - `/app/review` — human-review triage queue.
-- `/app/settings` — workspace, runtime, notifications, and members; no provider secrets or localhost fields.
-- Floating **Need Help** assistant — product-scoped and usage-scoped, separate from the governance Playground.
+- Floating **Need Help** assistant — product-scoped and usage-scoped, active on landing page.
 
 The authenticated frontend uses the real API when a server JWT is present; the Vite-only path falls back to sanitized local demo data. User-generated local requests are redacted before `localStorage` persistence.
 

@@ -1,74 +1,82 @@
-import { demoRequests, stageBlueprint } from './mockData'
-import type { Action, RequestRecord, Severity, StageEvent, StageStatus } from './types'
+import { stageBlueprint } from './mockData'
+import type { RequestRecord, StageEvent, Action } from './types'
 
-const STORAGE_KEY = 'cp_recent_requests'
-
-function storageKey() {
-  try {
-    const user = localStorage.getItem('cp_user')
-    const email = user ? (JSON.parse(user) as { email?: string }).email : undefined
-    return email ? `${STORAGE_KEY}:${encodeURIComponent(email)}` : STORAGE_KEY
-  } catch {
-    return STORAGE_KEY
-  }
+export interface ApiRequestRecord {
+  id: string
+  prompt: string
+  use_case: string
+  action: string
+  policy_key: string
+  trust_score: number
+  cost_usd: number
+  latency_ms: number
+  risk_tags: string[]
+  verification_verdict: string
+  model_served: string
+  created_at: string
 }
 
-const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
-const PHONE = /(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)/g
-const CARD = /\b(?:\d[ -]*?){13,19}\b/g
-const STAGE_LABELS: Record<string, string> = { 'request.received': 'Request received', 'pii.scan': 'PII scan', 'injection.scan': 'Injection scan', 'complexity.classify': 'Complexity', 'usecase.detect': 'Use case detected', 'policy.evaluate': 'Policy evaluation', 'routing.select': 'Route selected', 'generation.stream': 'Streaming gate', verification: 'Verification', 'trust.calculated': 'Trust calculated' }
-
-function sanitize(value: string) {
-  return value.replace(EMAIL, '[EMAIL REDACTED]').replace(PHONE, '[PHONE REDACTED]').replace(CARD, '[PAYMENT CARD REDACTED]')
-}
-
-function sanitizeRequest(request: RequestRecord): RequestRecord {
-  return { ...request, prompt: sanitize(request.prompt), response: request.response ? sanitize(request.response) : request.response }
-}
-
-export interface ApiEventRecord { sequence: number; stage: string; status: string; duration_ms: number; confidence: number | null; data: Record<string, unknown>; ts: string }
-export interface ApiRequestRecord { id: string; prompt: string; use_case: string; action: string; trust_score: number; risk_tags: string[]; model_served: string | null; verification_verdict: string | null; latency_ms: number; cost_usd: number; status?: string; created_at: string }
-export interface ApiRequestDetail extends ApiRequestRecord { events: ApiEventRecord[]; verification_claims?: Record<string, unknown>[] }
-
-function displayUseCase(value: string) { return value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') }
-function severityFor(action: string): Severity { return action === 'BLOCK' ? 'danger' : ['FLAG', 'HUMAN_REVIEW'].includes(action) ? 'warn' : 'safe' }
-
-export function stagesFromApiEvents(events: ApiEventRecord[]): StageEvent[] {
-  return events.map((event) => {
-    const status = (['queued', 'running', 'ok', 'warn', 'blocked'].includes(event.status) ? event.status : 'warn') as StageStatus
-    const data = event.data ?? {}
-    const tone: Severity = status === 'blocked' ? 'danger' : status === 'warn' ? 'warn' : status === 'ok' ? 'safe' : 'info'
-    const detail = String(data.explanation ?? data.action ?? data.use_case ?? data.verdict ?? (status === 'blocked' ? 'Blocked by policy.' : 'Stage completed.'))
-    return { id: event.stage, name: event.stage, label: STAGE_LABELS[event.stage] ?? event.stage, status, duration: `${event.duration_ms}ms`, confidence: event.confidence == null ? undefined : `${Math.round(event.confidence * 100)}%`, detail, tone }
+export function fromApiRequest(apiReq: ApiRequestRecord): RequestRecord {
+  const isBlocked = apiReq.action === 'BLOCK'
+  const isReview = apiReq.action === 'HUMAN_REVIEW'
+  const isFlagged = apiReq.action === 'FLAG'
+  
+  const tone = isBlocked ? 'danger' : isReview || isFlagged ? 'warn' : 'safe'
+  const stages: StageEvent[] = stageBlueprint.map(stage => {
+    let status = 'ok' as const
+    let confidence = '100%'
+    if (stage.id === 'routing.select') {
+      return { ...stage, status, confidence, detail: `Routed to ${apiReq.model_served}` }
+    }
+    if (stage.id === 'trust.calculated') {
+      return { ...stage, status: apiReq.trust_score > 80 ? 'ok' : apiReq.trust_score > 50 ? 'warn' : 'blocked', confidence: `${apiReq.trust_score}%`, detail: `Final trust score: ${apiReq.trust_score}` }
+    }
+    if (isBlocked && stage.id === 'policy.evaluate') {
+      return { ...stage, status: 'blocked', detail: `Policy ${apiReq.policy_key} blocked request.` }
+    }
+    if (isBlocked && (stage.id === 'generation.stream' || stage.id === 'verification')) {
+      return { ...stage, status: 'queued', detail: 'Skipped due to early termination.' }
+    }
+    return { ...stage, status, confidence }
   })
-}
-
-export function fromApiRequest(raw: ApiRequestRecord): RequestRecord {
-  const action = raw.action as Action
-  const tone = severityFor(raw.action)
-  const stages: StageEvent[] = stageBlueprint.map((stage) => ({ ...stage, status: raw.status === 'blocked' ? 'blocked' : stage.status, tone: raw.status === 'blocked' ? 'danger' : stage.tone }))
-  return { id: raw.id, prompt: raw.prompt, useCase: displayUseCase(raw.use_case), action, trust: raw.trust_score, createdAt: new Date(raw.created_at).toLocaleString(), model: raw.model_served ?? '—', latency: `${raw.latency_ms}ms`, cost: `$${raw.cost_usd.toFixed(4)}`, riskTags: raw.risk_tags ?? [], verdict: raw.verification_verdict ?? 'Unverified', tone, stages }
-}
-
-export function fromApiDetail(raw: ApiRequestDetail): RequestRecord {
-  return { ...fromApiRequest(raw), stages: raw.events?.length ? stagesFromApiEvents(raw.events) : fromApiRequest(raw).stages }
-}
-
-export function loadRequests(includeDemo = true): RequestRecord[] {
-  try {
-    const stored = localStorage.getItem(storageKey())
-    const local = stored ? JSON.parse(stored) as RequestRecord[] : []
-    const ids = new Set(local.map((request) => request.id))
-    return includeDemo ? [...local, ...demoRequests.filter((request) => !ids.has(request.id))] : local
-  } catch {
-    return includeDemo ? demoRequests : []
+  
+  return {
+    id: apiReq.id,
+    prompt: apiReq.prompt,
+    useCase: apiReq.use_case,
+    action: apiReq.action as Action,
+    trust: apiReq.trust_score,
+    createdAt: new Date(apiReq.created_at).toLocaleString(),
+    model: apiReq.model_served,
+    latency: `${apiReq.latency_ms}ms`,
+    cost: `$${apiReq.cost_usd.toFixed(4)}`,
+    riskTags: apiReq.risk_tags || [],
+    verdict: apiReq.verification_verdict,
+    tone,
+    stages
   }
+}
+
+export function loadRequests(includeDemo: boolean = false): RequestRecord[] {
+  try {
+    const raw = localStorage.getItem('cp_requests')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    }
+  } catch (e) {
+    console.error('Failed to load local requests', e)
+  }
+  return []
 }
 
 export function saveRequest(request: RequestRecord) {
   try {
-    const next = [sanitizeRequest(request), ...loadRequests().filter((item) => item.id !== request.id)].slice(0, 50)
-    // Keep only user-generated records in storage; seeded demo traffic is supplied by the fallback layer.
-    localStorage.setItem(storageKey(), JSON.stringify(next.filter((item) => !demoRequests.some((demo) => demo.id === item.id))))
-  } catch { /* Storage is optional in private browsing. */ }
+    const existing = loadRequests()
+    const updated = [request, ...existing].slice(0, 50)
+    localStorage.setItem('cp_requests', JSON.stringify(updated))
+    window.dispatchEvent(new Event('cp_requests_updated'))
+  } catch (e) {
+    console.error('Failed to save request', e)
+  }
 }

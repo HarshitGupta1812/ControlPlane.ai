@@ -4,14 +4,12 @@ import { API_BASE, ApiError, apiFetch, isApiMode } from '../lib/api'
 
 interface AuthContextValue {
   user: User | null
-  signIn: (email: string, password?: string, mode?: 'signin' | 'signup') => Promise<void>
+  signIn: (email: string, password?: string, mode?: 'signin' | 'signup', displayName?: string, workspaceName?: string) => Promise<void>
   signOut: () => void
   isAuthenticated: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
-
-const defaultUser: User = { email: 'maya@northstar.ai', name: 'Maya Chen', tenant: 'Northstar Labs' }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -24,27 +22,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     isAuthenticated: Boolean(user),
-    signIn: async (email: string, password = '', mode = 'signin') => {
+    signIn: async (email: string, password = '', mode = 'signin', displayName?: string, workspaceName?: string) => {
       if (isApiMode()) {
-        try {
-          const path = mode === 'signup' ? '/api/auth/signup' : '/api/auth/signin'
-          const payload = mode === 'signup' ? { email, password, display_name: email.split('@')[0], workspace_name: 'Northstar Labs' } : { email, password }
-          const result = await apiFetch<{ access_token: string; user: { email: string; display_name: string; tenant_id: string } }>(path, { method: 'POST', body: JSON.stringify(payload) })
-          const next: User = { email: result.user.email, name: result.user.display_name, tenant: 'Northstar Labs' }
-          localStorage.setItem('cp_user', JSON.stringify(next))
-          localStorage.setItem('cp_token', result.access_token)
-          setUser(next)
-          return
-        } catch (error) {
-          // Vite-only development intentionally falls back to the offline workspace.
-          // Once an API is configured, surface credential errors instead of masking them.
-          if (API_BASE || (error instanceof ApiError && error.status < 500)) throw error
-        }
+        const path = mode === 'signup' ? '/api/auth/signup' : '/api/auth/signin'
+        const payload = mode === 'signup'
+          ? { email, password, display_name: displayName || email.split('@')[0], workspace_name: workspaceName || 'My workspace' }
+          : { email, password }
+        const result = await apiFetch<{ access_token: string; user: { id: string; email: string; display_name: string; tenant_id: string } }>(path, { method: 'POST', body: JSON.stringify(payload) })
+        const next: User = { id: result.user.id, email: result.user.email, name: result.user.display_name, tenant_id: result.user.tenant_id }
+        localStorage.setItem('cp_user', JSON.stringify(next))
+        localStorage.setItem('cp_token', result.access_token)
+        setUser(next)
+        return
       }
-      const next = { ...defaultUser, email: email || defaultUser.email }
-      localStorage.setItem('cp_user', JSON.stringify(next))
-      localStorage.setItem('cp_token', 'demo-session-token')
-      setUser(next)
+      throw new Error('API is not available. Please ensure the backend is running.')
     },
     signOut: () => {
       localStorage.removeItem('cp_user')

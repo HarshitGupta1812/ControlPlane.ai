@@ -29,22 +29,13 @@ export interface RequestRecord {
   tone: Severity
   stages: StageEvent[]
   response?: string
-}
-
-export interface PolicyProfile {
-  id: string
-  name: string
-  version: string
-  useCase: string
-  geography: string
-  sector: string
-  active: boolean
-  updated: string
-  ruleCount: number
+  policyKey?: string
+  policyVersion?: number
 }
 
 export interface User {
+  id: string
   email: string
   name: string
-  tenant: string
+  tenant_id: string
 }

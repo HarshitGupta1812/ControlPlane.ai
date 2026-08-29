@@ -1,12 +1,50 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { Bell, ChevronRight, Command, Search } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { Sidebar } from '../components/Sidebar'
-import { NeedHelp } from '../components/NeedHelp'
+import { useAuth } from '../auth/context'
 
-const labels: Record<string, string> = { '/app': 'Playground', '/app/dashboard': 'Dashboard', '/app/pipeline': 'Live Pipeline', '/app/replay': 'Replay', '/app/policies': 'Policies', '/app/traces': 'Traces', '/app/review': 'Review queue', '/app/settings': 'Settings' }
+const labels: Record<string, string> = {
+  '/app': 'Prompt Tester',
+  '/app/dashboard': 'Analytics',
+  '/app/pipeline-replay': 'Decision Replay',
+  '/app/traces': 'Audit Log',
+  '/app/review': 'Review Queue',
+}
+
+function userInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
 
 export function AppLayout() {
   const location = useLocation()
-  const label = labels[location.pathname] ?? 'Control plane'
-  return <div className="app-shell"><Sidebar /><div className="app-main"><header className="app-topbar"><div className="breadcrumbs"><span>Northstar Labs</span><ChevronRight size={13} /><strong>{label}</strong></div><div className="topbar-actions"><button className="command-search"><Search size={15} /><span>Search anything</span><kbd>⌘ K</kbd></button><button className="topbar-icon"><Bell size={17} /><i /></button><div className="topbar-tenant"><span>MC</span></div></div></header><div className="page-content"><Outlet /></div></div><NeedHelp /></div>
+  const { user, signOut } = useAuth()
+  const label = labels[location.pathname] ?? 'Control Plane'
+  const initials = user?.name ? userInitials(user.name) : user?.email?.slice(0, 2).toUpperCase() ?? '??'
+
+  return (
+    <div className="app-shell">
+      <Sidebar />
+      <div className="app-main">
+        <header className="app-topbar">
+          <div className="breadcrumbs">
+            <strong>{label}</strong>
+          </div>
+          <div className="topbar-actions">
+            <div className="topbar-user">
+              <div className="topbar-tenant"><span>{initials}</span></div>
+              <span className="topbar-name">{user?.name ?? 'User'}</span>
+              <button className="topbar-signout" onClick={signOut} aria-label="Sign out" title="Sign out">
+                <LogOut size={15} />
+              </button>
+            </div>
+          </div>
+        </header>
+        <div className="page-content">
+          <Outlet />
+        </div>
+      </div>
+    </div>
+  )
 }

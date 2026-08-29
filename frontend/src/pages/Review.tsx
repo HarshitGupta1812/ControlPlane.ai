@@ -1,22 +1,85 @@
-import { useEffect, useState } from 'react'
-import { ArrowRight, Check, Clock3, Eye, Flag, Inbox, MessageSquare, MoreHorizontal, ShieldAlert, UserRound, X } from 'lucide-react'
-import { Badge, StatusDot } from '../components/Badge'
-import { ActionBadge, PageHeader, SectionHeader } from '../components/Ui'
+import { CheckCircle2, Search, Shield, XCircle } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '../components/Badge'
+import { PageHeader, SearchField } from '../components/Ui'
 import { useWorkspaceRequests } from '../lib/useRequests'
 import type { RequestRecord } from '../lib/types'
 
 export function Review() {
   const requests = useWorkspaceRequests()
-  const [selected, setSelected] = useState<RequestRecord | null>(() => requests.find((request) => request.action === 'HUMAN_REVIEW' || request.action === 'FLAG') ?? requests[0] ?? null)
-  const [resolved, setResolved] = useState<string[]>([])
-  const queue = requests.filter((request) => request.action === 'HUMAN_REVIEW' || request.action === 'FLAG').filter((request) => !resolved.includes(request.id))
-  useEffect(() => {
-    if (!selected || !requests.some((request) => request.id === selected.id)) {
-      const first = queue[0] ?? requests[0]
-      setSelected(first ?? null)
-    }
-  }, [requests, queue, selected])
-  if (!selected) return <div className="review-page"><PageHeader eyebrow="Workspace / Review queue" title="Human review" description="Make high-stakes decisions with the full context in view." /><div className="empty-state glass-panel"><div className="empty-icon"><Inbox size={18} /></div><h3>No review items</h3><p>Run a governed prompt to populate the review queue.</p></div></div>
-  return <div className="review-page"><PageHeader eyebrow="Workspace / Review queue" title="Human review" description="Make high-stakes decisions with the full context in view."><Badge tone="warn">{queue.length} waiting</Badge><button className="subtle-button"><Clock3 size={14} /> SLA: 18 min</button></PageHeader><div className="review-layout"><section className="review-queue glass-panel"><SectionHeader title="Needs your attention" detail="Sorted by risk and age" action="Queue settings" icon={<MoreHorizontal size={14} />} /><div className="review-tabs"><button className="active">All <span>{queue.length}</span></button><button>Decision support <span>2</span></button><button>Customer-facing <span>1</span></button></div><div className="review-list">{queue.length ? queue.map((request) => <button className={`review-row ${selected.id === request.id ? 'selected' : ''}`} onClick={() => setSelected(request)} key={request.id}><div className="review-row-top"><span className={`request-status ${request.tone}`}><StatusDot tone={request.tone} /></span><span>{request.id}</span><time>{request.createdAt}</time></div><strong>{request.prompt}</strong><div className="review-row-foot"><Badge tone="warn">{request.action === 'FLAG' ? 'Flagged' : 'Human review'}</Badge><span>{request.riskTags.join(' · ')}</span><ChevronRightIcon /></div></button>) : <div className="empty-state compact"><div className="empty-icon"><Inbox size={18} /></div><h3>Queue cleared</h3><p>There are no unresolved review items.</p></div>}</div></section><section className="review-detail glass-panel"><div className="review-detail-head"><div><div className="eyebrow"><ShieldAlert size={12} /> Review item</div><h2>{selected.id}</h2></div><div><button className="icon-button"><MoreHorizontal size={16} /></button></div></div><div className="review-risk-banner"><div className="risk-banner-icon"><ShieldAlert size={17} /></div><div><strong>{selected.verdict}</strong><span>Escalated by correlated risk signals. Generation was paused.</span></div><Badge tone={selected.tone}>{selected.action.replace('_', ' ')}</Badge></div><div className="review-prompt"><label>Original prompt</label><p>{selected.prompt}</p></div><div className="review-context-grid"><div className="review-context-card"><span>Detected use case</span><strong>{selected.useCase}</strong><small>confidence 0.91 · inferred</small></div><div className="review-context-card"><span>Trust score</span><strong className="text-warn">{selected.trust}<small>/100</small></strong><small>below review threshold 65</small></div><div className="review-context-card"><span>Policy profile</span><strong>CP-DS-11 · v11</strong><small>Decision Support Strict</small></div></div><div className="review-signals"><div className="section-header"><div><h2>Contributing signals</h2><span>Fusion engine shows constituent findings.</span></div></div><div className="signal-grid">{selected.riskTags.map((tag, index) => <div className="signal-card" key={tag}><span className={`signal-card-icon ${index === 0 ? 'amber' : 'crimson'}`}>{index === 0 ? <Flag size={14} /> : <ShieldAlert size={14} />}</span><div><strong>{tag}</strong><small>confidence {index === 0 ? '82%' : '91%'}</small></div><Badge tone="warn">depresses trust</Badge></div>)}</div></div><div className="review-actions"><button className="button button-crimson" onClick={() => { setResolved((current) => [...current, selected.id]); setSelected(queue.find((item) => item.id !== selected.id) ?? null) }}><Check size={15} /> Resolve as reviewed</button><button className="button button-ghost"><MessageSquare size={15} /> Request context</button><button className="text-button"><X size={14} /> Block</button></div></section></div></div>
+  const reviewQueue = requests.filter((r) => r.action === 'HUMAN_REVIEW')
+  const [search, setSearch] = useState('')
+  
+  const filtered = reviewQueue.filter(r => search ? r.prompt.toLowerCase().includes(search.toLowerCase()) || r.id.toLowerCase().includes(search.toLowerCase()) : true)
+
+  return (
+    <div className="review-page">
+      <PageHeader title="Review Queue" description="Requests held by policy requiring manual intervention.">
+        <SearchField placeholder="Search pending reviews..." value={search} onChange={setSearch} />
+      </PageHeader>
+      
+      <div className="review-layout">
+        <div className="review-list">
+          {filtered.map((request) => (
+            <ReviewCard key={request.id} request={request} />
+          ))}
+          {filtered.length === 0 && (
+            <div className="empty-state glass-panel">
+              <div className="empty-icon"><Shield size={18} /></div>
+              <h3>Queue is empty</h3>
+              <p>No requests currently require manual review.</p>
+            </div>
+          )}
+        </div>
+        
+        <aside className="review-side">
+          <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px' }}>
+            <h3 style={{ fontSize: '13px', marginBottom: '15px' }}>Queue metrics</h3>
+            <div style={{ display: 'grid', gap: '15px' }}>
+              <div>
+                <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', fontFamily: 'monospace' }}>Pending</div>
+                <div style={{ fontSize: '24px', fontWeight: 500 }}>{filtered.length}</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  )
 }
-function ChevronRightIcon() { return <ArrowRight size={14} /> }
+
+function ReviewCard({ request }: { request: RequestRecord }) {
+  return (
+    <div className="review-card glass-panel">
+      <div className="review-head">
+        <div className="review-meta">
+          <strong>{request.id}</strong>
+          <small>{request.useCase} · {request.createdAt}</small>
+        </div>
+        <Badge tone="warn">Needs review</Badge>
+      </div>
+      
+      <div className="review-body">
+        <div className="review-section">
+          <h4>Prompt payload</h4>
+          <div className="review-content">{request.prompt}</div>
+        </div>
+        
+        <div className="review-section">
+          <h4>Detected risk signals</h4>
+          <div className="risk-chips">
+            {request.riskTags.map(tag => (
+              <Badge key={tag} tone="warn">{tag}</Badge>
+            ))}
+            {request.riskTags.length === 0 && <span style={{ fontSize: '11px', color: '#888' }}>No specific tags</span>}
+          </div>
+        </div>
+      </div>
+      
+      <div className="review-actions">
+        <button className="button button-ghost button-small"><XCircle size={14} /> Block request</button>
+        <button className="button button-crimson button-small"><CheckCircle2 size={14} /> Approve request</button>
+      </div>
+    </div>
+  )
+}

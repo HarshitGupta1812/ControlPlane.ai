@@ -9,7 +9,7 @@ interface Message { id: number; role: 'assistant' | 'user'; text: string; source
 const starter: Message = {
   id: 1,
   role: 'assistant',
-  text: 'Hi Maya. I can explain ControlPlane and your workspace activity. Ask me about a request, trust trends, policies, or a pipeline stage.',
+  text: 'Hi! I can explain ControlPlane and your workspace activity. Ask me about a request, trust trends, policies, or a pipeline stage.',
 }
 
 function answerFor(input: string, requests: RequestRecord[]) {
@@ -80,8 +80,7 @@ export function NeedHelp({ compact = false }: { compact?: boolean }) {
   return <div className={`help-root ${compact ? 'help-compact' : ''}`}>
     {open && !minimized && <section className="assistant-panel glass-panel" aria-label="Need Help assistant">
       <header className="assistant-header"><div className="assistant-title"><span className="assistant-icon"><Bot size={17} /></span><div><strong>Need Help</strong><small><span className="online-dot" /> Scoped product assistant</small></div></div><div className="assistant-actions"><button aria-label="Minimize assistant" onClick={() => setMinimized(true)}><Minus size={15} /></button><button aria-label="Close assistant" onClick={() => setOpen(false)}><X size={15} /></button></div></header>
-      <div className="assistant-disclaimer"><ShieldCheck size={13} /> Product knowledge + your workspace only</div>
-      <div className="assistant-messages">{messages.map((message) => <div key={message.id} className={`assistant-message ${message.role === 'user' ? 'from-user' : 'from-bot'}`}><div className="message-bubble">{message.text}</div>{message.source && <small>{message.source}</small>}</div>)}{typing && <div className="assistant-message from-bot"><div className="message-bubble assistant-typing"><LoaderCircle size={13} className="spin" /> Checking scoped context…</div></div>}</div>
+      <div className="assistant-messages">{messages.map((message) => <div key={message.id} className={`assistant-message ${message.role === 'user' ? 'from-user' : 'from-bot'}`}><div className="message-bubble">{message.text.split(/\n/).map((line, i) => { const text = line.trim(); if (!text) return null; if (text.startsWith('* ') || text.startsWith('- ')) return <li key={i} style={{ marginLeft: '16px', marginTop: '4px' }}>{text.substring(2).replace(/\*\*(.*?)\*\*/g, '$1')}</li>; return <p key={i} style={{ marginTop: i === 0 ? '0' : '8px', marginBottom: '0' }}>{text.replace(/\*\*(.*?)\*\*/g, '$1')}</p>; })}</div></div>)}{typing && <div className="assistant-message from-bot"><div className="message-bubble assistant-typing"><LoaderCircle size={13} className="spin" /> Checking scoped context…</div></div>}</div>
       <div className="assistant-suggestions"><button onClick={() => void send('Why was my last request blocked?')}>Why was I blocked?</button><button onClick={() => void send('What is my average trust score?')}>Average trust</button></div>
       <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); void send() }}><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask about ControlPlane..." aria-label="Ask the assistant" disabled={typing} /><button aria-label="Send message" disabled={typing || !draft.trim()}><Send size={16} /></button></form>
     </section>}

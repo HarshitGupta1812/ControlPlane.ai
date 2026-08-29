@@ -23,4 +23,3 @@ export function MiniSpark({ values, tone = 'crimson' }: { values: number[]; tone
 export function EmptySearch({ query }: { query: string }) { return <div className="empty-state"><div className="empty-icon"><SlidersHorizontal size={19} /></div><h3>No matching events</h3><p>Nothing in this workspace matches “{query}”. Try a different filter.</p></div> }
 export function AddButton({ children = 'Add new' }: { children?: ReactNode }) { return <button className="subtle-button"><Plus size={14} /> {children}</button> }
 export function CheckMark() { return <span className="check-mark"><Check size={13} /></span> }
-export function OperationalPill() { return <span className="operational"><StatusDot tone="safe" pulse /> Operational</span> }
