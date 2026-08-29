@@ -56,7 +56,7 @@ export function NeedHelp({ compact = false }: { compact?: boolean }) {
         let responseText = ''
         let sourceText = 'Scoped product and workspace data'
         await streamApi('/api/assistant/stream', { message: clean, conversation: messages.slice(-10).map((message) => ({ role: message.role, content: message.text })) }, (event) => {
-          if (event.event === 'token') responseText += String(event.data.token ?? '')
+          if (event.event === 'token') responseText += String(event.data.text ?? '')
           if (event.event === 'context') {
             const sources = Array.isArray(event.data.sources) ? event.data.sources.map(String).join(' · ') : ''
             if (sources) sourceText = sources

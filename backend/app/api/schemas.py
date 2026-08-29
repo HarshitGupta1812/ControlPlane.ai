@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AuthSignUp(BaseModel):
@@ -31,6 +32,13 @@ class ResetPassword(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class SourceInput(BaseModel):
+    """A bounded source used only for response verification in the current demo."""
+
+    id: str = Field(min_length=1, max_length=160)
+    text: str = Field(min_length=1, max_length=12_000)
+
+
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=12000)
     use_case: str | None = None
@@ -41,7 +49,17 @@ class ChatRequest(BaseModel):
     verification: Literal["auto", "on", "off"] = "auto"
     max_cost_usd: float | None = Field(default=None, ge=0)
     session_id: str | None = None
-    sources: list[dict] = Field(default_factory=list, max_length=20)
+    sources: list[SourceInput] = Field(default_factory=list, max_length=10)
+
+    @field_validator("session_id")
+    @classmethod
+    def validate_session_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("session_id must be a UUID") from exc
 
 
 class AssistantRequest(BaseModel):

@@ -73,7 +73,7 @@ export function Playground() {
         await streamApi('/api/chat/stream', { prompt, use_case: useCase === 'Auto-detect' ? undefined : useCase, policy_key: policy.startsWith('Auto') ? undefined : policy.split(' · ')[0], routing_preference: route.startsWith('Fast') ? 'fast' : route.startsWith('Capable') ? 'capable' : 'auto', pii_action: privacy.toLowerCase(), safety_strictness: strictness.toLowerCase(), verification: verification.toLowerCase(), max_cost_usd: maxCost === 'No limit' ? undefined : Number(maxCost.replace('$', '')), session_id: sessionId.current, sources: sourceAttached ? [{ id: 'internal-knowledge-demo', text: 'Customer feedback operations onboarding themes and runbook guidance.' }] : [] }, (event) => {
           if (event.data.request_id) requestId = String(event.data.request_id)
           if (event.event === 'context' && event.data.session_id) sessionId.current = String(event.data.session_id)
-          if (event.event === 'token') responseText += String(event.data.token ?? '')
+          if (event.event === 'token') responseText += String(event.data.text ?? '')
           if (event.event === 'post') { trust = Number(event.data.trust_score ?? trust); riskTags = Array.isArray(event.data.risk_tags) ? event.data.risk_tags.map(String) : riskTags; verdict = String(event.data.verification ?? verdict) }
           if (event.event === 'done') { action = String(event.data.action ?? action) as Action; trust = Number(event.data.trust_score ?? trust); model = event.data.model ? String(event.data.model) : '—'; latency = `${Number(event.data.latency_ms ?? 0)}ms`; cost = `$${Number(event.data.cost_usd ?? 0).toFixed(4)}` }
           if (event.event !== 'stage') return

@@ -1,5 +1,8 @@
 import pytest
+from pydantic import ValidationError
 
+from app.api.schemas import ChatRequest
+from app.config import Settings
 from app.core.orchestrator import GovernanceOrchestrator
 from app.policies.simulator import simulate
 from app.security.auth import hash_password, verify_password
@@ -60,3 +63,15 @@ def test_simulator_runs_fusion_without_generation() -> None:
     assert result["action"] == "HUMAN_REVIEW"
     assert "bias" in result["risk_tags"]
     assert result["estimated_cost_usd"] == 0.0
+
+
+def test_chat_request_rejects_invalid_session_and_oversized_sources() -> None:
+    with pytest.raises(ValidationError):
+        ChatRequest(prompt="hello", session_id="not-a-uuid")
+    with pytest.raises(ValidationError):
+        ChatRequest(prompt="hello", sources=[{"id": "source", "text": "x" * 12_001}])
+
+
+def test_settings_accepts_documented_comma_separated_cors_origins(monkeypatch) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8080")
+    assert Settings().cors_origins == ["http://localhost:5173", "http://localhost:8080"]

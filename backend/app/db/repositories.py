@@ -41,6 +41,10 @@ def persist_result(db: Session, *, user: User, result: PipelineResult, session_i
         status="blocked" if result.action == "BLOCK" else "completed",
     )
     db.add(record)
+    # Flush the parent row before dependent rows: HumanReviewQueue/Message/Event
+    # carry only a scalar request_id FK (no ORM relationship), so the unit of work
+    # will not otherwise guarantee "requests" is inserted first.
+    db.flush()
     db.add(
         Message(
             request_id=result.request_id,

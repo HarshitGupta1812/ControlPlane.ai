@@ -134,7 +134,7 @@ async def chat_stream(body: ChatRequest, request: Request, user: UserDep, db: Db
             "verification": body.verification,
             "max_cost_usd": body.max_cost_usd,
             "session_risk": session_risk,
-            "sources": body.sources,
+            "sources": [source.model_dump() for source in body.sources],
             "session_window": session_window,
             "policy_override": policy_override,
         }
@@ -256,7 +256,7 @@ async def assistant_stream(request: Request, body: AssistantRequest, user: UserD
     async def generate() -> AsyncIterator[str]:
         yield sse("context", {"sources": response.sources, "tool_calls": response.tool_calls, "scope": "product_and_current_user"})
         for token in response.text.split(" "):
-            yield sse("token", {"token": token + " "})
+            yield sse("token", {"text": token + " "})
         yield sse("done", {"tool_calls": response.tool_calls})
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

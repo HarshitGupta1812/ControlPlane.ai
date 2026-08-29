@@ -53,6 +53,7 @@ def detect_use_case(prompt: str, explicit: str | None = None, headers: dict[str,
     best_score = scores[best_key]
     if best_score >= .55:
         return UseCaseResult(PROFILE_BY_KEY[best_key], min(best_score + .2, .96), True, "semantic_match", scores)
-    # Safe fallback: decision support is the most restrictive plausible profile.
-    fallback = PROFILE_BY_KEY["decision_support"]
+    # Unmatched prompts fall back to internal knowledge so they still get answered
+    # (PII/safety scans and verification flags still apply); they are not held for review.
+    fallback = PROFILE_BY_KEY["internal_knowledge"]
     return UseCaseResult(fallback, .42, True, "restrictive_fallback", scores)

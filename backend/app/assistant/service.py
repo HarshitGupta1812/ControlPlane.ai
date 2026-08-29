@@ -102,7 +102,7 @@ async def answer(message: str, *, db: Session, user: User) -> AssistantAnswer:
 
         context = {"recent": recent, "usage": usage, "policies": policies, "request_detail": detail, "knowledge": knowledge}
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "system", "content": f"Sanitized scoped context: {context}"}, {"role": "user", "content": message}]
-        first = await acompletion(model="groq/gpt-oss-20b", messages=messages, tools=TOOL_DEFINITIONS, tool_choice="auto", temperature=0.1, api_key=settings.groq_api_key)
+        first = await acompletion(model="groq/openai/gpt-oss-20b", messages=messages, tools=TOOL_DEFINITIONS, tool_choice="auto", temperature=0.1, api_key=settings.groq_api_key)
         assistant_message = first.choices[0].message
         model_tool_calls = getattr(assistant_message, "tool_calls", None) or []
         if model_tool_calls:
@@ -117,7 +117,7 @@ async def answer(message: str, *, db: Session, user: User) -> AssistantAnswer:
                     arguments = {}
                 tool_calls.append(name)
                 messages.append({"role": "tool", "tool_call_id": getattr(call, "id", name), "name": name, "content": json.dumps(_tool_payload(name, arguments, db=db, user=user, recent=recent, usage=usage, policies=policies, detail=detail))})
-            final = await acompletion(model="groq/gpt-oss-20b", messages=messages, temperature=0.1, api_key=settings.groq_api_key)
+            final = await acompletion(model="groq/openai/gpt-oss-20b", messages=messages, temperature=0.1, api_key=settings.groq_api_key)
             content = final.choices[0].message.content or deterministic
         else:
             content = assistant_message.content or deterministic

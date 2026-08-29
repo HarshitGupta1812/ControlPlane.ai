@@ -1,7 +1,8 @@
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -9,7 +10,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://controlplane:controlplane@localhost:5432/controlplane"
     jwt_secret: str = "dev-only-change-this-controlplane-secret"
     jwt_expire_minutes: int = 480
-    cors_origins: list[str] = ["http://localhost:5173"]
+    # NoDecode lets the documented comma-separated environment value reach
+    # parse_origins instead of requiring JSON array syntax in Docker.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     dev_mock_llm: bool = True
     groq_api_key: str | None = None
     gemini_api_key: str | None = None

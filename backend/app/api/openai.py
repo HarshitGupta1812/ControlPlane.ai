@@ -40,16 +40,20 @@ def _chunk(request_id: str, content: str = "", finish_reason: str | None = None)
 
 @router.post("/chat/completions")
 @limiter.limit("60/minute")
-async def completions(request: Request, body: OpenAIRequest, x_api_key: Annotated[str | None, Header()] = None, x_use_case: Annotated[str | None, Header(alias="X-Use-Case")] = None, db: Session = Depends(get_db)):
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail="X-API-Key is required")
-    key = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(x_api_key), ApiKey.revoked.is_(False)))
+async def completions(request: Request, body: OpenAIRequest, x_api_key: Annotated[str | None, Header()] = None, authorization: Annotated[str | None, Header()] = None, x_use_case: Annotated[str | None, Header(alias="X-Use-Case")] = None, db: Session = Depends(get_db)):
+    bearer_key = authorization.removeprefix("Bearer ").strip() if authorization and authorization.lower().startswith("bearer ") else None
+    raw_key = x_api_key or bearer_key
+    if not raw_key:
+        raise HTTPException(status_code=401, detail="X-API-Key or Authorization: Bearer <key> is required")
+    key = db.scalar(select(ApiKey).where(ApiKey.key_hash == hash_api_key(raw_key), ApiKey.revoked.is_(False)))
     if not key:
         raise HTTPException(status_code=401, detail="Invalid API key")
     user = db.get(User, key.user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
     prompt = next((message.content for message in reversed(body.messages) if message.role == "user"), "")
+    if not prompt.strip():
+        raise HTTPException(status_code=422, detail="messages must include a non-empty user message")
     if len(prompt) > get_settings().max_prompt_chars:
         raise HTTPException(status_code=413, detail="Prompt exceeds the configured maximum length")
     effective_use_case = body.use_case or x_use_case or key.default_use_case
@@ -63,7 +67,7 @@ async def completions(request: Request, body: OpenAIRequest, x_api_key: Annotate
         result: PipelineResult | None = None
         async for kind, payload in orchestrator.stream_events(prompt, use_case=effective_use_case, request_id=get_request_id()):
             if kind == "token":
-                yield _chunk(str(payload["request_id"]), str(payload.get("token", "")))
+                yield _chunk(str(payload["request_id"]), str(payload.get("text", "")))
             elif kind == "result":
                 result = payload["result"]
         if result is not None:

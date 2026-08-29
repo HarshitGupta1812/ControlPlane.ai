@@ -241,7 +241,7 @@ class GovernanceOrchestrator:
                 for release in releases:
                     safe_release = _sanitize_output(release)
                     response += safe_release
-                    yield "token", {"request_id": prepared.request_id, "token": safe_release}
+                    yield "token", {"request_id": prepared.request_id, "text": safe_release}
             if not gate.cancelled and scan_toxicity(gate.peek())["level"] == "HIGH":
                 gate.cancel()
                 gate_intervened = True
@@ -250,11 +250,11 @@ class GovernanceOrchestrator:
                 for release in gate.flush():
                     safe_release = _sanitize_output(release)
                     response += safe_release
-                    yield "token", {"request_id": prepared.request_id, "token": safe_release}
+                    yield "token", {"request_id": prepared.request_id, "text": safe_release}
             prepared.fallback_used = self.router.fallback_used()
             if gate_intervened:
                 response = "The response was withheld by the streaming safety gate. Please refine the request or ask a reviewer."
-                yield "token", {"request_id": prepared.request_id, "token": response}
+                yield "token", {"request_id": prepared.request_id, "text": response}
             output_toxicity = scan_toxicity(response)
             gate_intervened = gate_intervened or _is_unsafe(output_toxicity, prepared.safety_strictness)
             prepared.events.append(PipelineEvent("generation.stream", "warn" if gate_intervened else "ok", 1240, .96, {"buffer_chars": gate.max_chars, "released_tokens": len(response.split()), "intervention": gate_intervened, "fallback_used": prepared.fallback_used}))

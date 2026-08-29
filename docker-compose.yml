@@ -18,6 +18,10 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    # Live-reload the app code so edits take effect without a rebuild.
+    command: ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /srv/app"]
+    volumes:
+      - ./backend/app:/srv/app
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql+psycopg://controlplane:controlplane@db:5432/controlplane
@@ -28,6 +32,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AUTO_CREATE_TABLES: "true"
       LOG_LEVEL: INFO
+      # Docker Desktop on Windows/macOS does not deliver inotify events to
+      # bind mounts; polling is what makes --reload actually fire.
+      WATCHFILES_FORCE_POLLING: "true"
     depends_on:
       db:
         condition: service_healthy
