@@ -7,15 +7,28 @@ def test_router_uses_groq_as_default_primary(monkeypatch) -> None:
     router = ModelRouter()
     monkeypatch.setattr(router.settings, "groq_api_key", "groq-test")
     monkeypatch.setattr(router.settings, "gemini_api_key", "")
-    assert router.select(tier="balanced")["model"] == "groq/gpt-oss-20b"
-    assert router.select(tier="balanced")["fallback"] == "gemini/gemini-2.5-flash"
+    assert router.select(tier="balanced")["model"] == "groq/openai/gpt-oss-20b"
+    assert router.select(tier="balanced")["fallback"] == "gemini/gemini-3.6-flash"
 
 
-def test_capable_route_uses_gemini_when_configured(monkeypatch) -> None:
+def test_groq_stays_primary_on_the_capable_tier(monkeypatch) -> None:
+    # Groq is the unconditional primary whenever a Groq key is configured;
+    # Gemini 3.6-flash is only ever the fallback.
     router = ModelRouter()
     monkeypatch.setattr(router.settings, "groq_api_key", "groq-test")
     monkeypatch.setattr(router.settings, "gemini_api_key", "gemini-test")
-    assert router.select(tier="capable")["model"] == "gemini/gemini-3.6-flash"
+    route = router.select(tier="capable")
+    assert route["model"] == "groq/openai/gpt-oss-20b"
+    assert route["fallback"] == "gemini/gemini-3.6-flash"
+
+
+def test_gemini_is_primary_only_without_a_groq_key(monkeypatch) -> None:
+    router = ModelRouter()
+    monkeypatch.setattr(router.settings, "groq_api_key", "")
+    monkeypatch.setattr(router.settings, "gemini_api_key", "gemini-test")
+    route = router.select(tier="capable")
+    assert route["model"] == "gemini/gemini-3.6-flash"
+    assert route["fallback"] == "groq/openai/gpt-oss-20b"
 
 
 @pytest.mark.asyncio

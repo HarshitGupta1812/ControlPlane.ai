@@ -14,7 +14,10 @@ def test_decision_support_semantic_match() -> None:
     assert result.inferred is True
 
 
-def test_safe_fallback_is_restrictive() -> None:
+def test_safe_fallback_is_internal_knowledge() -> None:
+    # Unmatched prompts fall back to internal knowledge so they are still
+    # answered (scans/verification still apply), not held for human review.
     result = detect_use_case("Tell me something unrelated")
-    assert result.profile.key == "decision_support"
+    assert result.profile.key == "internal_knowledge"
+    assert result.inferred is True
     assert result.confidence < .55
