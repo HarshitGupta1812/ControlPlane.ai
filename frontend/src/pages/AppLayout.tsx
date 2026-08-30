@@ -4,7 +4,7 @@ import { Sidebar } from '../components/Sidebar'
 import { useAuth } from '../auth/context'
 
 const labels: Record<string, string> = {
-  '/app': 'Prompt Tester',
+  '/app': 'Playground',
   '/app/dashboard': 'Analytics',
   '/app/pipeline-replay': 'Decision Replay',
   '/app/traces': 'Audit Log',

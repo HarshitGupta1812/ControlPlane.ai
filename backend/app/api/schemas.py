@@ -134,3 +134,6 @@ class ApiKeyCreate(BaseModel):
 class ReviewResolution(BaseModel):
     resolution: Literal["allow", "edit", "block", "dismiss"]
     note: str | None = Field(default=None, max_length=1000)
+
+class RequestActionUpdate(BaseModel):
+    action: Literal["ALLOW", "BLOCK", "PASS"]

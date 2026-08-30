@@ -1,14 +1,40 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, hasLiveApiToken } from './api'
-import { fromApiRequest, loadRequests, type ApiRequestRecord } from './requestStore'
+import { fromApiRequest, loadRequests, resolveLocalRequest, type ApiRequestRecord } from './requestStore'
 import type { RequestRecord } from './types'
 
 export function useWorkspaceRequests(): RequestRecord[] {
   const liveApi = hasLiveApiToken()
   const { data } = useQuery<{ items: ApiRequestRecord[] }>({ queryKey: ['requests', 'workspace'], queryFn: () => apiFetch<{ items: ApiRequestRecord[] }>('/api/requests?limit=50'), enabled: liveApi, staleTime: 30_000 })
-  const [local] = useState(loadRequests)
+  const [local, setLocal] = useState(loadRequests)
+
+  useEffect(() => {
+    if (liveApi) return
+    const handler = () => setLocal(loadRequests())
+    window.addEventListener('cp_requests_updated', handler)
+    return () => window.removeEventListener('cp_requests_updated', handler)
+  }, [liveApi])
+
   return liveApi ? (data?.items?.map(fromApiRequest) ?? []) : local
+}
+
+export function useResolveRequest() {
+  const queryClient = useQueryClient()
+  const liveApi = hasLiveApiToken()
+
+  return async (id: string, action: 'ALLOW' | 'BLOCK') => {
+    if (liveApi) {
+      await apiFetch(`/api/requests/${id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ action })
+      })
+      queryClient.invalidateQueries({ queryKey: ['requests'] })
+      queryClient.invalidateQueries({ queryKey: ['request', id] })
+    } else {
+      resolveLocalRequest(id, action)
+    }
+  }
 }
 
 type RequestDetailResponse = ApiRequestRecord & { events?: unknown[] }

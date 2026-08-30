@@ -18,6 +18,7 @@ from app.api.schemas import (
     PolicySimulation,
     PolicyVersionIn,
     ReviewResolution,
+    RequestActionUpdate,
 )
 from app.assistant.service import answer as assistant_answer
 from app.assistant.tools import get_recent_requests, get_usage_summary, list_policies
@@ -176,6 +177,18 @@ def requests_list(user: UserDep, db: DbDep, offset: int = Query(0, ge=0), limit:
     total = db.scalar(select(func.count(RequestRecord.id)).where(and_(*predicates))) or 0
     return {"items": [public_request(row) for row in rows], "total": total, "offset": offset, "limit": limit}
 
+
+@router.post("/requests/{request_id}/resolve")
+def resolve_request_action(request_id: str, body: RequestActionUpdate, user: UserDep, db: DbDep) -> dict:
+    request_id = _normalize_uuid(request_id, "request")
+    record = db.scalar(select(RequestRecord).where(RequestRecord.id == request_id, RequestRecord.user_id == user.id, RequestRecord.tenant_id == user.tenant_id))
+    if not record: raise HTTPException(status_code=404, detail="Request not found")
+    action = body.action
+    if action in ("ALLOW", "BLOCK", "PASS"):
+        if action == "PASS": action = "ALLOW"
+        record.policy_action = action
+        db.commit()
+    return {"ok": True, "id": record.id, "action": record.policy_action}
 
 @router.get("/requests/{request_id}")
 def request_detail(request_id: str, user: UserDep, db: DbDep) -> dict:

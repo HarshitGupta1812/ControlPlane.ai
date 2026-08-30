@@ -5,7 +5,7 @@ import { useAuth } from '../auth/context'
 import { useEffect, useState } from 'react'
 
 const navItems = [
-  { to: '/app', label: 'Prompt Tester', icon: Sparkles, end: true },
+  { to: '/app', label: 'Playground', icon: Sparkles, end: true },
   { to: '/app/dashboard', label: 'Analytics', icon: BarChart3 },
   { to: '/app/pipeline-replay', label: 'Decision Replay', icon: Waypoints },
   { to: '/app/traces', label: 'Audit Log', icon: GitBranch },

@@ -2,15 +2,21 @@ import { CheckCircle2, Search, Shield, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '../components/Badge'
 import { PageHeader, SearchField } from '../components/Ui'
-import { useWorkspaceRequests } from '../lib/useRequests'
+import { useWorkspaceRequests, useResolveRequest } from '../lib/useRequests'
 import type { RequestRecord } from '../lib/types'
 
 export function Review() {
   const requests = useWorkspaceRequests()
   const reviewQueue = requests.filter((r) => r.action === 'HUMAN_REVIEW')
   const [search, setSearch] = useState('')
+  const resolveRequest = useResolveRequest()
   
   const filtered = reviewQueue.filter(r => search ? r.prompt.toLowerCase().includes(search.toLowerCase()) || r.id.toLowerCase().includes(search.toLowerCase()) : true)
+
+  const handleResolve = (id: string, action: 'BLOCK' | 'PASS') => {
+    // PASS is equivalent to ALLOW
+    resolveRequest(id, action === 'BLOCK' ? 'BLOCK' : 'ALLOW').catch(console.error)
+  }
 
   return (
     <div className="review-page">
@@ -21,7 +27,7 @@ export function Review() {
       <div className="review-layout">
         <div className="review-list">
           {filtered.map((request) => (
-            <ReviewCard key={request.id} request={request} />
+            <ReviewCard key={request.id} request={request} onResolve={handleResolve} />
           ))}
           {filtered.length === 0 && (
             <div className="empty-state glass-panel">
@@ -48,7 +54,7 @@ export function Review() {
   )
 }
 
-function ReviewCard({ request }: { request: RequestRecord }) {
+function ReviewCard({ request, onResolve }: { request: RequestRecord, onResolve: (id: string, action: 'BLOCK' | 'PASS') => void }) {
   return (
     <div className="review-card glass-panel">
       <div className="review-head">
@@ -77,8 +83,8 @@ function ReviewCard({ request }: { request: RequestRecord }) {
       </div>
       
       <div className="review-actions">
-        <button className="button button-ghost button-small"><XCircle size={14} /> Block request</button>
-        <button className="button button-crimson button-small"><CheckCircle2 size={14} /> Approve request</button>
+        <button className="button button-ghost button-small" onClick={() => onResolve(request.id, 'BLOCK')}><XCircle size={14} /> Block request</button>
+        <button className="button button-crimson button-small" onClick={() => onResolve(request.id, 'PASS')}><CheckCircle2 size={14} /> Approve request</button>
       </div>
     </div>
   )

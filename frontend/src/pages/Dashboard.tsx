@@ -93,7 +93,7 @@ export function Dashboard() {
           <div className="kpi-icon-wrap kpi-icon-amber"><ShieldAlert size={18} /></div>
           <div className="kpi-body">
             <span className="kpi-label">Interventions</span>
-            <strong className="kpi-value">{interventionCount}<small className="kpi-pct">{interventionRate}%</small></strong>
+            <strong className="kpi-value">{interventionCount}<small className="kpi-pct">/ {interventionRate}%</small></strong>
           </div>
         </div>
         <div className="kpi-card-enhanced glass-panel">

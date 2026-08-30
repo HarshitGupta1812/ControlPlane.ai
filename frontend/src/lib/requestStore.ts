@@ -104,3 +104,19 @@ export function saveRequest(request: RequestRecord) {
     console.error('Failed to save request', e)
   }
 }
+
+export function resolveLocalRequest(id: string, action: 'ALLOW' | 'BLOCK') {
+  try {
+    const existing = loadRequests()
+    const updated = existing.map(r => {
+      if (r.id === id) {
+        return { ...r, action, tone: action === 'BLOCK' ? 'danger' : 'safe' }
+      }
+      return r
+    })
+    localStorage.setItem('cp_requests', JSON.stringify(updated))
+    window.dispatchEvent(new Event('cp_requests_updated'))
+  } catch (e) {
+    console.error('Failed to resolve request locally', e)
+  }
+}
