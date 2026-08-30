@@ -7,7 +7,7 @@ def scan_pii(text: str) -> dict:
     if not (settings.groq_api_key or settings.gemini_api_key):
         return {"count": 0, "types": {}, "findings": [], "redacted": False}
 
-    model = "groq/gpt-oss-20b" if settings.groq_api_key else "gemini/gemini-3.6-flash"
+    model = "groq/openai/gpt-oss-20b" if settings.groq_api_key else "gemini/gemini-3.6-flash"
     api_key = settings.groq_api_key if settings.groq_api_key else settings.gemini_api_key
 
     prompt = f"""Analyze the following text for PII (Personally Identifiable Information).

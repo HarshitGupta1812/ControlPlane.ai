@@ -11,11 +11,16 @@ export function useWorkspaceRequests(): RequestRecord[] {
   return liveApi ? (data?.items?.map(fromApiRequest) ?? []) : local
 }
 
+type RequestDetailResponse = ApiRequestRecord & { events?: unknown[] }
+
 export function useRequestDetail(requestId: string | undefined): RequestRecord | undefined {
   const liveApi = hasLiveApiToken()
-  const { data } = useQuery<{ item: ApiRequestRecord }>({ queryKey: ['request', requestId], queryFn: () => apiFetch<{ item: ApiRequestRecord }>(`/api/requests/${requestId}`), enabled: liveApi && Boolean(requestId), staleTime: 60_000 })
+  // GET /api/requests/{id} returns the record fields plus a real `events` array,
+  // flat (no wrapper). Passing it to fromApiRequest lets it use the persisted
+  // per-stage telemetry instead of a synthesized fallback.
+  const { data } = useQuery<RequestDetailResponse>({ queryKey: ['request', requestId], queryFn: () => apiFetch<RequestDetailResponse>(`/api/requests/${requestId}`), enabled: liveApi && Boolean(requestId), staleTime: 60_000 })
   const [local] = useState(loadRequests)
-  
-  if (liveApi) return data?.item ? fromApiRequest(data.item) : undefined
+
+  if (liveApi) return data ? fromApiRequest(data) : undefined
   return local.find(r => r.id === requestId)
 }

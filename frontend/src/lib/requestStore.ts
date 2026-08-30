@@ -11,8 +11,8 @@ export interface ApiRequestRecord {
   cost_usd: number
   latency_ms: number
   risk_tags: string[]
-  verification_verdict: string
-  model_served: string
+  verification_verdict: string | null
+  model_served: string | null
   created_at: string
 }
 
@@ -49,7 +49,7 @@ export function fromApiRequest(apiReq: ApiRequestRecord & { events?: any[] }): R
       let status = 'ok' as const
       let confidence = '100%'
       if (stage.id === 'routing.select') {
-        return { ...stage, status, confidence, detail: `Routed to ${apiReq.model_served}` }
+        return { ...stage, status, confidence, detail: apiReq.model_served ? `Routed to ${apiReq.model_served}` : 'No model — request halted before generation' }
       }
       if (stage.id === 'trust.calculated') {
         return { ...stage, status: apiReq.trust_score > 80 ? 'ok' : apiReq.trust_score > 50 ? 'warn' : 'blocked', confidence: `${apiReq.trust_score}%`, detail: `Final trust score: ${apiReq.trust_score}` }
@@ -71,11 +71,11 @@ export function fromApiRequest(apiReq: ApiRequestRecord & { events?: any[] }): R
     action: apiReq.action as Action,
     trust: apiReq.trust_score,
     createdAt: new Date(apiReq.created_at).toLocaleString(),
-    model: apiReq.model_served,
+    model: apiReq.model_served ?? '—',
     latency: `${apiReq.latency_ms}ms`,
     cost: `$${apiReq.cost_usd.toFixed(4)}`,
     riskTags: apiReq.risk_tags || [],
-    verdict: apiReq.verification_verdict,
+    verdict: apiReq.verification_verdict ?? 'UNVERIFIED',
     tone,
     stages
   }
