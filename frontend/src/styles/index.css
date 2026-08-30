@@ -351,7 +351,10 @@ button:disabled { cursor: not-allowed; opacity: .66; }
 @media (max-width: 560px) { .calibration-card { overflow-x: auto; } .calibration-card .section-header { min-width: 560px; } }
 .footer-divider { background: #3a3a41; height: 15px; margin: 0 2px; width: 1px; }
 .composer-toolbar-actions .toolbar-active { background: var(--cyan-soft); color: var(--cyan); }
-.source-chip { align-items: center; background: var(--cyan-soft); border: 1px solid rgba(34,211,238,.18); border-radius: 4px; color: #7ad8e4; display: inline-flex; font-size: 13.5px; gap: 4px; padding: 4px 6px; }
+.source-chip { align-items: center; background: var(--cyan-soft); border: 1px solid rgba(34,211,238,.18); border-radius: 4px; color: #7ad8e4; display: inline-flex; font-size: 13.5px; gap: 4px; max-width: 100%; overflow: hidden; padding: 4px 6px; text-overflow: ellipsis; white-space: nowrap; }
+.source-chip-error { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.25); color: #f0a5a5; }
+.source-chip-clear { align-items: center; color: inherit; display: inline-flex; margin-left: 2px; opacity: .7; }
+.source-chip-clear:hover { opacity: 1; }
 
 .sidebar.collapsed { width: 68px; }
 .sidebar.collapsed .sidebar-label, .sidebar.collapsed .sidebar-label-spaced, .sidebar.collapsed .nav-item span, .sidebar.collapsed .sidebar-spacer, .sidebar.collapsed .user-meta { display: none; }

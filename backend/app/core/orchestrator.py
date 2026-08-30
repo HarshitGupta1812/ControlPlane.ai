@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import time
 from collections.abc import AsyncIterator
@@ -6,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from app.config import get_settings
 from app.detectors.heuristics import classify_complexity, scan_injection, scan_toxicity
 from app.detectors.regex_pii import scan_pii
 from app.llm.router import ModelRouter, SYSTEM_PROMPTS
@@ -198,7 +200,7 @@ class GovernanceOrchestrator:
         else:
             gate = StreamingSafetyGate(buffer_chars=_buffer_size(prepared.verification_mode, prepared.action, prepared.safety_strictness))
             use_case_system_prompt = SYSTEM_PROMPTS.get(prepared.use_case)
-            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route, system_prompt=use_case_system_prompt):
+            async for token in self.router.stream(_prompt_with_sources(prepared.sanitized_prompt, prepared.sources), prepared.route, system_prompt=use_case_system_prompt):
                 unsafe = _is_unsafe(scan_toxicity(gate.peek() + token), prepared.safety_strictness)
                 releases = gate.push(token, unsafe=unsafe)
                 response += "".join(_sanitize_output(release) for release in releases)
@@ -213,7 +215,7 @@ class GovernanceOrchestrator:
             output_toxicity = scan_toxicity(response)
             gate_intervened = gate_intervened or _is_unsafe(output_toxicity, prepared.safety_strictness)
             prepared.events.append(PipelineEvent("generation.stream", "warn" if gate_intervened else "ok", 1240, .96, {"buffer_chars": gate.max_chars, "released_tokens": len(response.split()), "intervention": gate_intervened, "fallback_used": prepared.fallback_used}))
-        return self._finish(prepared, response, gate_intervened)
+        return await self._finish(prepared, response, gate_intervened)
 
     async def stream_events(self, prompt: str, **kwargs: Any) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Yield governance events and gated tokens progressively for the SSE API."""
@@ -233,7 +235,7 @@ class GovernanceOrchestrator:
         else:
             gate = StreamingSafetyGate(buffer_chars=_buffer_size(prepared.verification_mode, prepared.action, prepared.safety_strictness))
             use_case_system_prompt = SYSTEM_PROMPTS.get(prepared.use_case)
-            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route, system_prompt=use_case_system_prompt):
+            async for token in self.router.stream(_prompt_with_sources(prepared.sanitized_prompt, prepared.sources), prepared.route, system_prompt=use_case_system_prompt):
                 unsafe = _is_unsafe(scan_toxicity(gate.peek() + token), prepared.safety_strictness)
                 releases = gate.push(token, unsafe=unsafe)
                 if gate.cancelled:
@@ -261,14 +263,14 @@ class GovernanceOrchestrator:
             gate_intervened = gate_intervened or _is_unsafe(output_toxicity, prepared.safety_strictness)
             prepared.events.append(PipelineEvent("generation.stream", "warn" if gate_intervened else "ok", 1240, .96, {"buffer_chars": gate.max_chars, "released_tokens": len(response.split()), "intervention": gate_intervened, "fallback_used": prepared.fallback_used}))
             yield "stage", {"request_id": prepared.request_id, "sequence": len(prepared.events), **prepared.events[-1].as_dict()}
-        result = self._finish(prepared, response, gate_intervened)
+        result = await self._finish(prepared, response, gate_intervened)
         for sequence, event in enumerate(prepared.events[-2:], start=len(prepared.events) - 1):
             if event.stage in {"verification", "trust.calculated"}:
                 yield "stage", {"request_id": prepared.request_id, "sequence": sequence, **event.as_dict()}
         yield "post", {"request_id": result.request_id, "verification": result.verification, "trust_score": result.trust_score, "trust_breakdown": result.trust_breakdown, "risk_tags": result.risk_tags}
         yield "result", {"result": result}
 
-    def _finish(self, prepared: PreparedPipeline, response: str, gate_intervened: bool) -> PipelineResult:
+    async def _finish(self, prepared: PreparedPipeline, response: str, gate_intervened: bool) -> PipelineResult:
         response = _sanitize_output(response)
         if gate_intervened and prepared.action == "ALLOW":
             prepared.action = "FLAG"
@@ -279,7 +281,7 @@ class GovernanceOrchestrator:
                 policy_event.status = "warn"
                 policy_event.data["action"] = prepared.action
                 policy_event.data["risk_tags"] = prepared.risk_tags
-        verification, claims = _verify_response(response, prepared.sources, prepared.verification_mode, prepared.action)
+        verification, claims = await asyncio.to_thread(_verify_response, response, prepared.sources, prepared.verification_mode, prepared.action)
         prepared.events.append(PipelineEvent("verification", "warn" if verification in {"UNVERIFIABLE", "PARTIALLY_SUPPORTED"} else "blocked" if verification in {"NOT_RUN", "UNSUPPORTED"} else "ok", 86, .72 if verification == "UNVERIFIABLE" else .84 if verification == "SUPPORTED" else .61 if verification == "PARTIALLY_SUPPORTED" else .24 if verification == "UNSUPPORTED" else None, {"verdict": verification, "claims": claims}))
         if verification == "UNSUPPORTED" and prepared.action not in {"BLOCK", "HUMAN_REVIEW"}:
             prepared.action = "BLOCK" if prepared.use_case == "decision_support" else "FLAG"
@@ -303,6 +305,19 @@ def _sanitize_output(value: str) -> str:
     return redact(value, find_pii(value)) if value else value
 
 
+def _prompt_with_sources(prompt: str, sources: list[dict[str, Any]]) -> str:
+    """Prepend attached source documents so the model grounds its answer in them."""
+    texts = [str(source.get("text", "")).strip() for source in sources if str(source.get("text", "")).strip()]
+    if not texts:
+        return prompt
+    blocks = "\n\n".join(f"[SOURCE {index}]\n{text[:8000]}" for index, text in enumerate(texts, start=1))
+    return (
+        "Answer the question using only the source document(s) below. "
+        "If the answer is not contained in the sources, say so plainly instead of guessing.\n\n"
+        f"{blocks}\n\n[QUESTION]\n{prompt}"
+    )
+
+
 def _stronger_action(current: str, candidate: str) -> str:
     rank = {"ALLOW": 0, "EDIT": 1, "SANITIZE": 2, "FLAG": 3, "HUMAN_REVIEW": 4, "BLOCK": 5}
     return candidate if rank.get(candidate, 0) > rank.get(current, 0) else current
@@ -322,6 +337,78 @@ def _buffer_size(verification_mode: str, action: str, safety_strictness: str) ->
     return 120
 
 
+_GROUNDING_VERDICTS = {"SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED"}
+
+
+def _grounding_rollup(details: list[dict[str, Any]]) -> str:
+    verdicts = [item["verdict"] for item in details]
+    if verdicts and all(verdict == "SUPPORTED" for verdict in verdicts):
+        return "SUPPORTED"
+    if verdicts and all(verdict == "UNSUPPORTED" for verdict in verdicts):
+        return "UNSUPPORTED"
+    return "PARTIALLY_SUPPORTED"
+
+
+def _llm_grounding_judge(source_text: str, claims: list[str], citations: list[str]) -> tuple[str, list[dict[str, Any]]] | None:
+    """Ask an LLM whether each claim is entailed by the source. Returns None if no
+    provider is available or the call fails, so the caller can fall back."""
+    settings = get_settings()
+    if settings.dev_mock_llm or not (settings.groq_api_key or settings.gemini_api_key):
+        return None
+    model = "groq/openai/gpt-oss-20b" if settings.groq_api_key else "gemini/gemini-3.6-flash"
+    api_key = settings.groq_api_key or settings.gemini_api_key
+    numbered = "\n".join(f"{index}. {claim}" for index, claim in enumerate(claims, start=1))
+    prompt = (
+        "You are a strict grounding verifier. For each CLAIM decide whether it is supported by the SOURCE.\n"
+        "Judge only against the SOURCE text; ignore outside knowledge.\n"
+        "Verdicts: SUPPORTED (the source states or clearly entails the claim), "
+        "PARTIALLY_SUPPORTED (the source addresses the topic but not the whole claim), "
+        "UNSUPPORTED (the source does not support the claim or contradicts it).\n\n"
+        f'SOURCE:\n"""\n{source_text[:6000]}\n"""\n\n'
+        f"CLAIMS:\n{numbered}\n\n"
+        'Respond with ONLY compact JSON: {"claims":[{"n":1,"verdict":"SUPPORTED"}, ...]} '
+        "with exactly one entry per claim number."
+    )
+    try:
+        from litellm import completion
+
+        response = completion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            temperature=0,
+            timeout=settings.llm_timeout_seconds,
+        )
+        content = str(response.choices[0].message.content).strip()
+        content = content[content.find("{") : content.rfind("}") + 1]
+        parsed = json.loads(content)
+        by_index = {int(item["n"]): str(item["verdict"]).upper().strip() for item in parsed.get("claims", [])}
+    except Exception as error:  # noqa: BLE001 - verification must never break the pipeline
+        print(f"grounding judge error: {error}")
+        return None
+
+    details: list[dict[str, Any]] = []
+    for index, claim in enumerate(claims, start=1):
+        verdict = by_index.get(index, "UNSUPPORTED")
+        if verdict not in _GROUNDING_VERDICTS:
+            verdict = "UNSUPPORTED"
+        confidence = 0.9 if verdict == "SUPPORTED" else 0.6 if verdict == "PARTIALLY_SUPPORTED" else 0.3
+        details.append({"claim": claim[:300], "verdict": verdict, "confidence": confidence, "citations": citations})
+    return _grounding_rollup(details), details
+
+
+def _lexical_grounding(source_text: str, claims: list[str], citations: list[str]) -> tuple[str, list[dict[str, Any]]]:
+    """Token-overlap fallback used when no LLM judge is available."""
+    source_tokens = set(re.findall(r"[a-z0-9]{4,}", source_text.lower()))
+    details: list[dict[str, Any]] = []
+    for claim in claims:
+        claim_tokens = re.findall(r"[a-z0-9]{4,}", claim.lower())
+        ratio = (sum(token in source_tokens for token in claim_tokens) / len(claim_tokens)) if claim_tokens else 0.0
+        verdict = "SUPPORTED" if ratio >= 0.5 else "PARTIALLY_SUPPORTED" if ratio >= 0.2 else "UNSUPPORTED"
+        details.append({"claim": claim[:300], "verdict": verdict, "confidence": round(min(0.85, 0.3 + ratio), 2), "citations": citations})
+    return _grounding_rollup(details), details
+
+
 def _verify_response(response: str, sources: list[dict[str, Any]], verification_mode: str, action: str) -> tuple[str, list[dict[str, Any]]]:
     if action in {"BLOCK", "HUMAN_REVIEW"} and not response.strip():
         return "NOT_RUN", []
@@ -330,15 +417,10 @@ def _verify_response(response: str, sources: list[dict[str, Any]], verification_
     claims = [claim.strip() for claim in re.split(r"(?<=[.!?])\s+", response.strip()) if len(claim.strip()) > 8][:8]
     if not claims:
         claims = ["No generated claim"]
-    if sources:
-        source_text = " ".join(str(source.get("text", "")) for source in sources).lower()
-        citations = [source.get("id", "source") for source in sources]
-        claim_details = []
-        for claim in claims:
-            meaningful = [token for token in re.findall(r"[a-z0-9]+", claim.lower()) if len(token) > 3][:4]
-            overlap = sum(token in source_text for token in meaningful)
-            verdict = "SUPPORTED" if overlap >= max(1, min(2, len(meaningful))) else "PARTIALLY_SUPPORTED" if overlap else "UNSUPPORTED"
-            claim_details.append({"claim": claim[:300], "verdict": verdict, "confidence": .84 if verdict == "SUPPORTED" else .61 if verdict == "PARTIALLY_SUPPORTED" else .24, "citations": citations})
-        overall = "SUPPORTED" if all(item["verdict"] == "SUPPORTED" for item in claim_details) else "UNSUPPORTED" if all(item["verdict"] == "UNSUPPORTED" for item in claim_details) else "PARTIALLY_SUPPORTED"
-        return overall, claim_details
-    return "UNVERIFIABLE", [{"claim": claim[:300], "verdict": "UNVERIFIABLE", "confidence": .72, "citations": []} for claim in claims]
+    if not sources:
+        return "UNVERIFIABLE", [{"claim": claim[:300], "verdict": "UNVERIFIABLE", "confidence": .72, "citations": []} for claim in claims]
+    source_text = "\n\n".join(str(source.get("text", "")) for source in sources).strip()
+    citations = [source.get("id", "source") for source in sources]
+    if not source_text:
+        return "UNVERIFIABLE", [{"claim": claim[:300], "verdict": "UNVERIFIABLE", "confidence": .72, "citations": citations} for claim in claims]
+    return _llm_grounding_judge(source_text, claims, citations) or _lexical_grounding(source_text, claims, citations)

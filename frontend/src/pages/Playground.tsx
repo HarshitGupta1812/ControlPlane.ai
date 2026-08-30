@@ -28,6 +28,9 @@ export function Playground() {
   const [verification, setVerification] = useState('Auto')
   const [maxCost, setMaxCost] = useState('No limit')
   const [sourceAttached, setSourceAttached] = useState(false)
+  const [sourceText, setSourceText] = useState('')
+  const [sourceName, setSourceName] = useState('')
+  const [sourceStatus, setSourceStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [isRunning, setIsRunning] = useState(false)
   const [hasRun, setHasRun] = useState(false)
   const [active, setActive] = useState<RequestRecord | null>(null)
@@ -38,6 +41,38 @@ export function Playground() {
 
   useEffect(() => { localStorage.setItem('cp_params_open', String(paramsOpen)) }, [paramsOpen])
   const displayedStages = useMemo(() => active?.stages ?? stageBlueprint, [active])
+
+  async function extractSource(file: File) {
+    if (file.size > 5 * 1024 * 1024) { setSourceStatus('error'); setSourceName('File exceeds 5 MB'); setSourceAttached(false); return }
+    setSourceStatus('loading'); setSourceName(file.name)
+    try {
+      let text = ''
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+        const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
+        const pages: string[] = []
+        for (let page = 1; page <= doc.numPages; page++) {
+          const content = await (await doc.getPage(page)).getTextContent()
+          pages.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '))
+        }
+        text = pages.join('\n\n')
+      } else {
+        text = await file.text()
+      }
+      text = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 20000)
+      if (!text) { setSourceStatus('error'); setSourceName('No readable text found'); setSourceAttached(false); return }
+      setSourceText(text); setSourceAttached(true); setSourceStatus('idle')
+    } catch {
+      setSourceStatus('error'); setSourceName('Could not read this file'); setSourceAttached(false)
+    }
+  }
+
+  function clearSource() {
+    setSourceAttached(false); setSourceText(''); setSourceName(''); setSourceStatus('idle')
+    const input = document.getElementById('file-upload') as HTMLInputElement | null
+    if (input) input.value = ''
+  }
 
   async function runPrompt() {
     if (!prompt.trim() || isRunning) return
@@ -65,7 +100,7 @@ export function Playground() {
         let verdict = 'Unverified'
         let detectedUseCase = 'Internal Knowledge'
         
-        await streamApi('/api/chat/stream', { prompt, use_case: useCase === 'Auto-detect' ? undefined : useCase, policy_key: policy.startsWith('Auto') ? undefined : policy.split(' · ')[0], routing_preference: route.startsWith('Fast') ? 'fast' : route.startsWith('Capable') ? 'capable' : 'auto', pii_action: privacy.toLowerCase(), safety_strictness: strictness.toLowerCase(), verification: verification.toLowerCase(), max_cost_usd: maxCost === 'No limit' ? undefined : Number(maxCost.replace('$', '')), session_id: sessionId.current, sources: sourceAttached ? [{ id: 'internal-knowledge-demo', text: 'Customer feedback operations onboarding themes and runbook guidance.' }] : [] }, (event) => {
+        await streamApi('/api/chat/stream', { prompt, use_case: useCase === 'Auto-detect' ? undefined : useCase, policy_key: policy.startsWith('Auto') ? undefined : policy.split(' · ')[0], routing_preference: route.startsWith('Fast') ? 'fast' : route.startsWith('Capable') ? 'capable' : 'auto', pii_action: privacy.toLowerCase(), safety_strictness: strictness.toLowerCase(), verification: verification.toLowerCase(), max_cost_usd: maxCost === 'No limit' ? undefined : Number(maxCost.replace('$', '')), session_id: sessionId.current, sources: sourceAttached && sourceText ? [{ id: sourceName || 'attached-source', text: sourceText }] : [] }, (event) => {
           if (event.data.request_id) requestId = String(event.data.request_id)
           if (event.event === 'context' && event.data.session_id) sessionId.current = String(event.data.session_id)
           if (event.event === 'token') responseText += String(event.data.text ?? '')
@@ -98,7 +133,7 @@ export function Playground() {
     }
   }
 
-  return <div className="playground-page"><div className="playground-head"><div><h1>Test a governed prompt</h1><p>Submit an inference and watch the control plane decide in real time.</p></div></div><div className="playground-layout"><div className="playground-center"><section className="composer-card glass-panel"><div className="composer-toolbar"><div className="composer-route"><span className="model-orb"><Sparkles size={14} /></span><div><strong>Governed chat</strong><small>Policy-aware inference</small></div></div><div className="composer-toolbar-actions"><input type="file" id="file-upload" style={{ display: 'none' }} onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 5 * 1024 * 1024) { alert('File size limit is 5MB'); return; } setSourceAttached(true); } }} /><button title="Attach source" className={sourceAttached ? 'toolbar-active' : ''} onClick={() => document.getElementById('file-upload')?.click()}><Paperclip size={16} /></button></div></div><textarea id="playground-composer" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask the control plane anything..." maxLength={12000} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void runPrompt() }} /><div className="composer-bottom">{sourceAttached ? <span className="source-chip"><Paperclip size={11} /> Source attached</span> : <span />}<div><button className="button button-crimson run-button" onClick={() => void runPrompt()} disabled={isRunning || !prompt.trim()}>{isRunning ? <><span className="button-spinner" /> Governing...</> : <>Run request</>}</button></div></div></section>{error && <div className="error-message" style={{ color: 'var(--danger)', marginTop: '10px', padding: '10px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>{error}</div>}{hasRun && active && !error && <ResponseCard request={active} running={isRunning} />}</div><aside className="playground-side"><section className={`parameters-card glass-panel ${paramsOpen ? 'open' : 'closed'}`}><button className="parameters-head" onClick={() => setParamsOpen((value) => !value)}><div><div className="eyebrow"><SlidersHorizontal size={12} /> Per-request parameters</div><h3>{paramsOpen ? 'Control how this run behaves' : 'Parameters hidden'}</h3></div><span className="params-toggle">{paramsOpen ? <ChevronDown size={16} /> : <ChevronLeft size={16} />}</span></button>{paramsOpen && <div className="parameters-body"><SelectField label="Use case" value={useCase} onChange={setUseCase} options={['Auto-detect', 'Customer Support', 'Internal Knowledge', 'Decision Support']} /><SelectField label="Policy profile" value={policy} onChange={setPolicy} options={['Auto · active profile', 'CP-CS-14 · Customer Support', 'CP-IK-07 · Internal Knowledge', 'CP-DS-11 · Decision Support']} /><SelectField label="Routing preference" value={route} onChange={setRoute} options={['Auto · best fit', 'Fast · lowest latency', 'Capable · highest quality']} /><div className="param-divider" /><div className="param-title"><span>Safety controls</span><small>Apply before generation</small></div><SelectField label="PII action" value={privacy} onChange={setPrivacy} options={['Sanitize', 'Flag', 'Block']} /><SelectField label="Safety strictness" value={strictness} onChange={setStrictness} options={['Low', 'Medium', 'High']} /><SelectField label="Verification" value={verification} onChange={setVerification} options={['Auto', 'On', 'Off']} /><SelectField label="Max cost / request" value={maxCost} onChange={setMaxCost} options={['No limit', '$0.005', '$0.01', '$0.05']} /></div>}</section></aside></div></div>
+  return <div className="playground-page"><div className="playground-head"><div><h1>Test a governed prompt</h1><p>Submit an inference and watch the control plane decide in real time.</p></div></div><div className="playground-layout"><div className="playground-center"><section className="composer-card glass-panel"><div className="composer-toolbar"><div className="composer-route"><span className="model-orb"><Sparkles size={14} /></span><div><strong>Governed chat</strong><small>Policy-aware inference</small></div></div><div className="composer-toolbar-actions"><input type="file" id="file-upload" accept=".pdf,.txt,.md,.markdown,.csv,.json,.log,text/*,application/pdf" style={{ display: 'none' }} onChange={(e) => { const file = e.target.files?.[0]; if (file) void extractSource(file) }} /><button title="Attach a source document to ground verification" className={sourceAttached ? 'toolbar-active' : ''} onClick={() => document.getElementById('file-upload')?.click()}><Paperclip size={16} /></button></div></div><textarea id="playground-composer" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask the control plane anything..." maxLength={12000} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void runPrompt() }} /><div className="composer-bottom">{sourceStatus === 'loading' ? <span className="source-chip"><span className="button-spinner" /> Reading {sourceName}…</span> : sourceStatus === 'error' ? <span className="source-chip source-chip-error"><X size={11} /> {sourceName}</span> : sourceAttached ? <span className="source-chip"><Paperclip size={11} /> {sourceName} · {sourceText.length.toLocaleString()} chars <button className="source-chip-clear" onClick={clearSource} title="Remove source"><X size={11} /></button></span> : <span />}<div><button className="button button-crimson run-button" onClick={() => void runPrompt()} disabled={isRunning || !prompt.trim()}>{isRunning ? <><span className="button-spinner" /> Governing...</> : <>Run request</>}</button></div></div></section>{error && <div className="error-message" style={{ color: 'var(--danger)', marginTop: '10px', padding: '10px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>{error}</div>}{hasRun && active && !error && <ResponseCard request={active} running={isRunning} />}</div><aside className="playground-side"><section className={`parameters-card glass-panel ${paramsOpen ? 'open' : 'closed'}`}><button className="parameters-head" onClick={() => setParamsOpen((value) => !value)}><div><div className="eyebrow"><SlidersHorizontal size={12} /> Per-request parameters</div><h3>{paramsOpen ? 'Control how this run behaves' : 'Parameters hidden'}</h3></div><span className="params-toggle">{paramsOpen ? <ChevronDown size={16} /> : <ChevronLeft size={16} />}</span></button>{paramsOpen && <div className="parameters-body"><SelectField label="Use case" value={useCase} onChange={setUseCase} options={['Auto-detect', 'Customer Support', 'Internal Knowledge', 'Decision Support']} /><SelectField label="Policy profile" value={policy} onChange={setPolicy} options={['Auto · active profile', 'CP-CS-14 · Customer Support', 'CP-IK-07 · Internal Knowledge', 'CP-DS-11 · Decision Support']} /><SelectField label="Routing preference" value={route} onChange={setRoute} options={['Auto · best fit', 'Fast · lowest latency', 'Capable · highest quality']} /><div className="param-divider" /><div className="param-title"><span>Safety controls</span><small>Apply before generation</small></div><SelectField label="PII action" value={privacy} onChange={setPrivacy} options={['Sanitize', 'Flag', 'Block']} /><SelectField label="Safety strictness" value={strictness} onChange={setStrictness} options={['Low', 'Medium', 'High']} /><SelectField label="Verification" value={verification} onChange={setVerification} options={['Auto', 'On', 'Off']} /><SelectField label="Max cost / request" value={maxCost} onChange={setMaxCost} options={['No limit', '$0.005', '$0.01', '$0.05']} /></div>}</section></aside></div></div>
 }
 
 function ResponseCard({ request, running }: { request: RequestRecord; running: boolean }) {
