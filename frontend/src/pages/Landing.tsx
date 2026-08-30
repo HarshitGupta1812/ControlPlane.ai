@@ -3,8 +3,6 @@ import { motion } from 'framer-motion'
 import { ArrowDown, ArrowRight, ArrowUpRight, FileClock, Github, LockKeyhole, Menu, Network, Play, ShieldCheck, Sparkles, Twitter, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Brand } from '../components/Brand'
-import { NeedHelp } from '../components/NeedHelp'
-
 const HeroScene = lazy(() => import('../components/three/Landing3D').then((module) => ({ default: module.Landing3D })))
 const PipelineScene = lazy(() => import('../components/three/Landing3D').then((module) => ({ default: module.Pipeline3D })))
 const StoryScene = lazy(() => import('../components/three/Landing3D').then((module) => ({ default: module.StoryScene })))
@@ -30,8 +28,7 @@ export function Landing() {
 
       <section className="final-cta section-shell"><div className="cta-glow" /><div className="eyebrow">Your models. Your rules. Your evidence.</div><h2>Put a control plane<br /><em>between prompt and production.</em></h2><p>Start with a local, deterministic demo. Connect a model when you are ready.</p><Link to="/login" className="button button-crimson button-large">Try ControlPlane free <ArrowUpRight size={17} /></Link></section>
     </main>
-    <footer className="landing-footer section-shell"><div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}><Brand /><div className="footer-legal">© 2026 ControlPlane.ai</div></div><div className="footer-note">Real-time governance for enterprise AI.</div><div className="footer-links"><a href="https://github.com" target="_blank" rel="noreferrer"><Github size={15} /> GitHub</a><a href="https://discord.com" target="_blank" rel="noreferrer"><CircleIcon /> Discord</a><a href="https://twitter.com" target="_blank" rel="noreferrer"><Twitter size={15} /> Twitter</a><span className="footer-divider" /><a href="#product">Product</a><a href="#pipeline">Pipeline</a><a href="#security">Security</a></div></footer>
-    <NeedHelp compact />
+    <footer className="landing-footer section-shell"><div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}><Brand /><div className="footer-legal">© 2026 ControlPlane.ai</div></div><div className="footer-note">Real-time governance for enterprise AI.</div><div className="footer-links"><a href="https://github.com/HarshitGupta1812/ControlPlane.ai" target="_blank" rel="noreferrer"><Github size={15} /> GitHub</a><a href="https://discord.com" target="_blank" rel="noreferrer"><CircleIcon /> Discord</a><a href="https://twitter.com" target="_blank" rel="noreferrer"><Twitter size={15} /> Twitter</a><span className="footer-divider" /><a href="#product">Product</a><a href="#pipeline">Pipeline</a><a href="#security">Security</a></div></footer>
   </div>
 }
 

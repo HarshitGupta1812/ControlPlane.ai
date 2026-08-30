@@ -45,7 +45,7 @@ async def test_pipeline_events_never_contain_raw_pii() -> None:
 
 @pytest.mark.asyncio
 async def test_attached_source_changes_honest_verification() -> None:
-    result = await GovernanceOrchestrator().run("Summarize the internal operations report", sources=[{"id": "runbook-1", "text": "Customer feedback clusters around operations and onboarding."}])
+    result = await GovernanceOrchestrator().run("Summarize the internal operations report", sources=[{"id": "runbook-1", "text": "Customer feedback clusters around operations and onboarding. We need to focus on improving the onboarding experience. Next steps: Overhaul documentation and hire more support staff."}])
     assert result.verification in {"SUPPORTED", "PARTIALLY_SUPPORTED"}
     assert result.claims[0]["citations"] == ["runbook-1"]
 
