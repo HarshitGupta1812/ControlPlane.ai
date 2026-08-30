@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from app.detectors.heuristics import classify_complexity, scan_injection, scan_toxicity
 from app.detectors.regex_pii import scan_pii
-from app.llm.router import ModelRouter
+from app.llm.router import ModelRouter, SYSTEM_PROMPTS
 from app.policies.engine import evaluate_policy
 from app.policies.profiles import PolicyProfile
 from app.security.redaction import find_pii, redact
@@ -121,7 +121,7 @@ class GovernanceOrchestrator:
         )
         events.extend(
             [
-                PipelineEvent("pii.scan", "warn" if pii["count"] else "ok", 18, .99 if pii["count"] else 1.0, {"count": pii["count"], "types": pii["types"], "redacted": True}),
+                PipelineEvent("pii.scan", "warn" if pii["count"] else "ok", 18, .99 if pii["count"] else 1.0, {"count": pii["count"], "types": pii["types"], "redacted": pii.get("redacted", False)}),
                 PipelineEvent("injection.scan", "blocked" if injection["level"] == "HIGH" else "warn" if injection["level"] == "MEDIUM" else "ok", 31, injection["confidence"], {"level": injection["level"], "signals": injection["signals"]}),
                 PipelineEvent("complexity.classify", "ok", 12, .94, {"level": complexity}),
                 PipelineEvent("usecase.detect", "warn" if detected.inferred and detected.confidence < .55 else "ok", 22, detected.confidence, {"use_case": detected.profile.name, "method": detected.method, "inferred": detected.inferred, "scores": detected.scores, "latency_budget_ms": detected.profile.latency_budget_ms, "verification": detected.profile.verification, "model_tier": detected.profile.model_tier}),
@@ -197,7 +197,8 @@ class GovernanceOrchestrator:
             prepared.events.append(PipelineEvent("generation.stream", "warn", 0, .91, {"intervention": True, "released_tokens": 0, "reason": "human_review"}))
         else:
             gate = StreamingSafetyGate(buffer_chars=_buffer_size(prepared.verification_mode, prepared.action, prepared.safety_strictness))
-            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route):
+            use_case_system_prompt = SYSTEM_PROMPTS.get(prepared.use_case)
+            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route, system_prompt=use_case_system_prompt):
                 unsafe = _is_unsafe(scan_toxicity(gate.peek() + token), prepared.safety_strictness)
                 releases = gate.push(token, unsafe=unsafe)
                 response += "".join(_sanitize_output(release) for release in releases)
@@ -231,7 +232,8 @@ class GovernanceOrchestrator:
             yield "intervention", {"request_id": prepared.request_id, "reason": "human_review", "fallback": "Generation was held for a human reviewer."}
         else:
             gate = StreamingSafetyGate(buffer_chars=_buffer_size(prepared.verification_mode, prepared.action, prepared.safety_strictness))
-            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route):
+            use_case_system_prompt = SYSTEM_PROMPTS.get(prepared.use_case)
+            async for token in self.router.stream(prepared.sanitized_prompt, prepared.route, system_prompt=use_case_system_prompt):
                 unsafe = _is_unsafe(scan_toxicity(gate.peek() + token), prepared.safety_strictness)
                 releases = gate.push(token, unsafe=unsafe)
                 if gate.cancelled:

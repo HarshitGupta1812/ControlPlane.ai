@@ -1,8 +1,9 @@
-import { ArrowDownRight, ArrowUpRight, BarChart3, Check, ChevronDown, Clock3, DollarSign, Download, Filter, Gauge, ShieldAlert, ShieldCheck, Target, TrendingUp, Users, Zap } from 'lucide-react'
+import { BarChart3, Clock3, Gauge, ShieldAlert, ShieldCheck, Target, TrendingUp, Users, Zap, Check } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Badge, StatusDot } from '../components/Badge'
-import { ActionBadge, KpiCard, MiniSpark, PageHeader, RiskBar, SectionHeader, SelectField } from '../components/Ui'
+import { StatusDot } from '../components/Badge'
+import { ActionBadge, PageHeader, SectionHeader, SelectField } from '../components/Ui'
 import { apiFetch, hasLiveApiToken } from '../lib/api'
 import { fromApiRequest, loadRequests, type ApiRequestRecord } from '../lib/requestStore'
 import { useAuth } from '../auth/context'
@@ -10,6 +11,12 @@ import type { RequestRecord } from '../lib/types'
 
 interface DashboardSummary { requests: number; average_trust: number; spend_usd: number; interventions: number }
 interface LiveActivityRecord { id: string; action: string; use_case: string; trust_score: number; created_at: string }
+
+const USE_CASE_MAP: Record<string, string> = {
+  'Customer Support': 'customer_support',
+  'Internal Knowledge': 'internal_knowledge',
+  'Decision Support': 'decision_support',
+}
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -27,62 +34,92 @@ export function Dashboard() {
   
   const [filter, setFilter] = useState('All use cases')
   
-  // Use remote requests if connected, otherwise fallback to local requests which also has live data from playground
   const rawRequests = liveApi ? (remoteRequests ? remoteRequests.items.map(fromApiRequest) : []) : loadRequests(false)
   const requests = useMemo(() => rawRequests, [rawRequests])
-  const visibleRequests = filter === 'All use cases' ? requests : requests.filter((request) => request.useCase === filter)
+
+  // Normalize filter to backend key for comparison
+  const filterKey = USE_CASE_MAP[filter] ?? null
+  const visibleRequests = filterKey ? requests.filter((r) => r.useCase === filterKey || r.useCase === filter) : requests
   
-  const displayedActivity = (liveActivity ?? []).slice(0, 4).map((item) => ({ 
-    title: item.action === 'BLOCK' ? 'Request blocked' : item.action === 'HUMAN_REVIEW' ? 'Review opened' : 'Request completed', 
-    detail: `${item.use_case} · ${item.id}`, 
+  const displayedActivity = (liveActivity ?? []).slice(0, 5).map((item) => ({ 
+    title: item.action === 'BLOCK' ? 'Request blocked' : item.action === 'HUMAN_REVIEW' ? 'Review opened' : item.action === 'FLAG' ? 'Request flagged' : 'Request completed', 
+    detail: `${item.use_case} · ${item.id.slice(0, 8)}`, 
     time: new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
     tone: item.action === 'BLOCK' ? 'danger' as const : item.action === 'HUMAN_REVIEW' || item.action === 'FLAG' ? 'warn' as const : 'safe' as const 
   }))
 
-  const riskCounts = useMemo(() => {
-    const counts = { injection: 0, privacy: 0, hallucination: 0, bias: 0 }
-    requests.forEach(r => {
-      if (r.riskTags.includes('injection')) counts.injection++
-      if (r.riskTags.includes('privacy')) counts.privacy++
-      if (r.riskTags.includes('hallucination')) counts.hallucination++
-      if (r.riskTags.includes('bias')) counts.bias++
+  // Compute derived metrics
+  const totalRequests = summary?.requests ?? requests.length
+  const avgTrust = summary?.average_trust ?? (requests.length > 0 ? requests.reduce((a, b) => a + b.trust, 0) / requests.length : 0)
+  const interventionCount = summary?.interventions ?? requests.filter(r => r.action !== 'ALLOW').length
+  const interventionRate = totalRequests > 0 ? Math.round((interventionCount / totalRequests) * 100) : 0
+  const totalSpend = summary?.spend_usd ?? (requests.length > 0 ? requests.reduce((a, b) => a + Number(b.cost.replace('$', '') || 0), 0) : 0)
+
+  const actionCounts = useMemo(() => {
+    const c = { allow: 0, block: 0, flag: 0, review: 0, sanitize: 0 }
+    visibleRequests.forEach(r => {
+      if (r.action === 'ALLOW') c.allow++
+      else if (r.action === 'BLOCK') c.block++
+      else if (r.action === 'FLAG') c.flag++
+      else if (r.action === 'HUMAN_REVIEW') c.review++
+      else if (r.action === 'SANITIZE') c.sanitize++
     })
-    const total = Math.max(1, requests.length)
-    return [
-      { label: 'Injection', value: Math.round(counts.injection / total * 100), count: counts.injection, color: 'crimson' },
-      { label: 'Privacy / PII', value: Math.round(counts.privacy / total * 100), count: counts.privacy, color: 'amber' },
-      { label: 'Hallucination', value: Math.round(counts.hallucination / total * 100), count: counts.hallucination, color: 'cyan' },
-      { label: 'Bias', value: Math.round(counts.bias / total * 100), count: counts.bias, color: 'purple' },
-    ]
-  }, [requests])
+    return c
+  }, [visibleRequests])
 
   return (
     <div className="dashboard-page">
-      <PageHeader title={`${getGreeting()}, ${user?.name || 'User'}`} description="Here’s what your control plane protected.">
+      <PageHeader title={`${getGreeting()}, ${user?.name || 'User'}`} description="Here's what your control plane protected.">
         <SelectField value={filter} onChange={setFilter} options={['All use cases', 'Customer Support', 'Internal Knowledge', 'Decision Support']} />
       </PageHeader>
       
-      <div className="kpi-grid">
-        <KpiCard label="Governed requests" value={summary ? summary.requests.toLocaleString() : (requests.length > 0 ? requests.length.toString() : '0')} />
-        <KpiCard label="Average trust" value={summary ? summary.average_trust.toFixed(1) : (requests.length > 0 ? (requests.reduce((a, b) => a + b.trust, 0) / requests.length).toFixed(1) : '—')} />
-        <KpiCard label="Interventions" value={summary ? summary.interventions.toLocaleString() : (requests.filter(r => r.action !== 'ALLOW').length.toString() || '0')} deltaTone="safe" />
-        <KpiCard label="Model spend" value={summary ? `$${summary.spend_usd.toFixed(2)}` : (requests.length > 0 ? `$${requests.reduce((a, b) => a + Number(b.cost.replace('$', '') || 0), 0).toFixed(2)}` : '—')} deltaTone="safe" />
+      {/* KPI Row */}
+      <div className="kpi-grid kpi-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+        <div className="kpi-card-enhanced glass-panel">
+          <div className="kpi-icon-wrap kpi-icon-cyan"><ShieldCheck size={18} /></div>
+          <div className="kpi-body">
+            <span className="kpi-label">Governed Requests</span>
+            <strong className="kpi-value">{totalRequests.toLocaleString()}</strong>
+          </div>
+        </div>
+        <div className="kpi-card-enhanced glass-panel">
+          <div className="kpi-icon-wrap kpi-icon-emerald"><Gauge size={18} /></div>
+          <div className="kpi-body">
+            <span className="kpi-label">Average Trust</span>
+            <strong className="kpi-value">{avgTrust > 0 ? avgTrust.toFixed(1) : '—'}<small>/100</small></strong>
+          </div>
+        </div>
+        <div className="kpi-card-enhanced glass-panel">
+          <div className="kpi-icon-wrap kpi-icon-amber"><ShieldAlert size={18} /></div>
+          <div className="kpi-body">
+            <span className="kpi-label">Interventions</span>
+            <strong className="kpi-value">{interventionCount}<small className="kpi-pct">{interventionRate}%</small></strong>
+          </div>
+        </div>
+        <div className="kpi-card-enhanced glass-panel">
+          <div className="kpi-icon-wrap kpi-icon-crimson"><TrendingUp size={18} /></div>
+          <div className="kpi-body">
+            <span className="kpi-label">Model Spend</span>
+            <strong className="kpi-value">${totalSpend.toFixed(4)}</strong>
+          </div>
+        </div>
       </div>
 
+      {/* Primary Row: Trust Trend + Live Activity */}
       <div className="dashboard-grid dashboard-grid-main">
-        <section className="chart-card glass-panel">
-          <SectionHeader title="Decision Distribution" detail="Across visible requests" icon={<BarChart3 size={14} />} />
-          <DecisionChart requests={visibleRequests} />
+        <section className="chart-card glass-panel" style={{ padding: '24px' }}>
+          <SectionHeader title="Trust & Latency Trend" detail="Rolling metrics across recent requests" icon={<TrendingUp size={14} />} />
+          <TrustTrendChart requests={visibleRequests} />
         </section>
 
         <section className="activity-card glass-panel">
-          <SectionHeader title="Live activity" detail="Updates every 5 seconds" icon={<Zap size={14} />} />
-          <div className="live-indicator"><StatusDot tone="safe" pulse /> Event stream connected</div>
+          <SectionHeader title="Live Activity" detail="Real-time event stream" icon={<Zap size={14} />} />
+          <div className="live-indicator"><StatusDot tone="safe" pulse /> Connected</div>
           <div className="activity-list">
             {displayedActivity.length > 0 ? displayedActivity.map((item) => (
               <div className="activity-row" key={item.title + item.time + item.detail}>
                 <span className={`activity-icon activity-${item.tone}`}>
-                  {item.tone === 'safe' ? <Check size={14} /> : item.tone === 'danger' ? <ShieldAlert size={14} /> : item.tone === 'warn' ? <Target size={14} /> : <Zap size={14} />}
+                  {item.tone === 'safe' ? <Check size={14} /> : item.tone === 'danger' ? <ShieldAlert size={14} /> : <Target size={14} />}
                 </span>
                 <div>
                   <strong>{item.title}</strong>
@@ -95,45 +132,33 @@ export function Dashboard() {
         </section>
       </div>
 
-      <div className="dashboard-grid dashboard-grid-secondary">
-        <section className="violations-card glass-panel">
-          <SectionHeader title="Top violations" detail="Frequency of risk tags" icon={<ShieldAlert size={14} />} />
-          <div className="risk-list">
-            {riskCounts.map((risk) => (
-              <div className="risk-row" key={risk.label}>
-                <div className="risk-label">
-                  <span className={`risk-icon ${risk.color}`}><ShieldAlert size={13} /></span>
-                  <strong>{risk.label}</strong>
-                  <small>{risk.count} events</small>
-                </div>
-                <div className="risk-value">
-                  <RiskBar value={risk.value} color={risk.color} />
-                  <b>{risk.value}%</b>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Secondary Row: Decision Distribution Pie + Trust Histogram + Use Case Volume */}
+      <div className="dashboard-grid dashboard-grid-tertiary" style={{ marginTop: '24px' }}>
+        <section className="chart-card glass-panel" style={{ padding: '24px' }}>
+          <SectionHeader title="Decision Distribution" detail="Policy action breakdown" icon={<BarChart3 size={14} />} />
+          <DecisionPieChart counts={actionCounts} total={visibleRequests.length} />
         </section>
 
-        <section className="model-card glass-panel">
-          <SectionHeader title="Trust Score Distribution" detail="Frequency by bucket" icon={<Gauge size={14} />} />
+        <section className="chart-card glass-panel" style={{ padding: '24px' }}>
+          <SectionHeader title="Trust Score Distribution" detail="Frequency by range" icon={<Gauge size={14} />} />
           <TrustHistogram requests={visibleRequests} />
         </section>
 
-        <section className="trust-breakdown-card glass-panel">
-          <SectionHeader title="Use Case Distribution" detail="Volume across segments" icon={<Users size={14} />} />
-          <UseCaseChart requests={visibleRequests} />
+        <section className="chart-card glass-panel" style={{ padding: '24px' }}>
+          <SectionHeader title="Use Case Volume" detail="Requests per category" icon={<Users size={14} />} />
+          <UseCaseBarChart requests={visibleRequests} />
         </section>
       </div>
 
-      <section className="requests-table-card glass-panel">
-        <SectionHeader title="Recent governed requests" detail="Your latest activity" icon={<Clock3 size={14} />} />
+      {/* Request Table */}
+      <section className="requests-table-card glass-panel" style={{ marginTop: '24px' }}>
+        <SectionHeader title="Recent Governed Requests" detail="Latest activity log" icon={<Clock3 size={14} />} />
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
                 <th>Request</th>
-                <th>Use case</th>
+                <th>Use Case</th>
                 <th>Decision</th>
                 <th>Trust</th>
                 <th>Model</th>
@@ -174,53 +199,92 @@ export function Dashboard() {
   )
 }
 
-function DecisionChart({ requests }: { requests: RequestRecord[] }) {
-  const counts = { allow: 0, block: 0, flag: 0, review: 0, sanitize: 0 }
-  requests.forEach(r => {
-    if (r.action === 'ALLOW') counts.allow++
-    if (r.action === 'BLOCK') counts.block++
-    if (r.action === 'FLAG') counts.flag++
-    if (r.action === 'HUMAN_REVIEW') counts.review++
-    if (r.action === 'SANITIZE') counts.sanitize++
-  })
-  const total = Math.max(1, requests.length)
-  const pAllow = (counts.allow / total) * 100
-  const pBlock = (counts.block / total) * 100
-  const pFlag = (counts.flag / total) * 100
-  const pReview = (counts.review / total) * 100
-  
-  if (requests.length === 0) return <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>No data</div>
+/* ---------- Trust & Latency Trend ---------- */
+function TrustTrendChart({ requests }: { requests: RequestRecord[] }) {
+  if (requests.length === 0) return <div className="chart-empty">No data available</div>
+
+  const data = [...requests].reverse().slice(0, 30).map((r, i) => ({
+    name: `Req ${i + 1}`,
+    trust: r.trust,
+    latency: parseInt(r.latency.replace('ms', '') || '0')
+  }))
 
   return (
-    <div style={{ display: 'flex', gap: '30px', alignItems: 'center', height: '220px', padding: '0 20px' }}>
-      <div className="model-donut" style={{ width: '120px', height: '120px', background: `conic-gradient(var(--emerald) 0 ${pAllow}%, var(--crimson) ${pAllow}% ${pAllow+pBlock}%, var(--amber) ${pAllow+pBlock}% ${pAllow+pBlock+pFlag}%, var(--purple) ${pAllow+pBlock+pFlag}% ${pAllow+pBlock+pFlag+pReview}%, var(--cyan) ${pAllow+pBlock+pFlag+pReview}% 100%)` }}>
-        <span>{total}</span>
+    <div style={{ width: '100%', height: '300px', marginTop: '10px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="colorTrust" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--emerald)" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="var(--emerald)" stopOpacity={0}/>
+            </linearGradient>
+            <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--purple)" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="var(--purple)" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="name" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} />
+          <YAxis yAxisId="left" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} />
+          <YAxis yAxisId="right" orientation="right" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} />
+          <Tooltip 
+            contentStyle={{ backgroundColor: 'rgba(20, 20, 23, 0.9)', border: '1px solid var(--border)', borderRadius: '8px' }}
+            itemStyle={{ color: '#eee', fontSize: '13px' }}
+            labelStyle={{ display: 'none' }}
+          />
+          <Area yAxisId="left" type="monotone" dataKey="trust" stroke="var(--emerald)" fillOpacity={1} fill="url(#colorTrust)" strokeWidth={2} name="Trust Score" />
+          <Area yAxisId="right" type="monotone" dataKey="latency" stroke="var(--purple)" fillOpacity={1} fill="url(#colorLatency)" strokeWidth={2} name="Latency (ms)" />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+/* ---------- Decision Distribution Pie Chart ---------- */
+const PIE_COLORS = ['#22c55e', '#ef4444', '#f59e0b', '#a855f7', '#06b6d4']
+
+function DecisionPieChart({ counts, total }: { counts: { allow: number; block: number; flag: number; review: number; sanitize: number }; total: number }) {
+  if (total === 0) return <div className="chart-empty">No data available</div>
+
+  const data = [
+    { name: 'Allow', value: counts.allow },
+    { name: 'Block', value: counts.block },
+    { name: 'Flag', value: counts.flag },
+    { name: 'Review', value: counts.review },
+    { name: 'Sanitize', value: counts.sanitize },
+  ].filter(d => d.value > 0)
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginTop: '10px' }}>
+      <div style={{ width: '180px', height: '180px', flexShrink: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={48} outerRadius={80} paddingAngle={3} dataKey="value" stroke="none">
+              {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip itemStyle={{ color: '#eee' }} contentStyle={{ backgroundColor: 'rgba(20, 20, 23, 0.9)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', color: '#eee' }} />
+          </PieChart>
+        </ResponsiveContainer>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-        <DecisionLegend label="Allow" count={counts.allow} color="var(--emerald)" />
-        <DecisionLegend label="Block" count={counts.block} color="var(--crimson)" />
-        <DecisionLegend label="Flag" count={counts.flag} color="var(--amber)" />
-        <DecisionLegend label="Review" count={counts.review} color="var(--purple)" />
-        <DecisionLegend label="Sanitize" count={counts.sanitize} color="var(--cyan)" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {data.map((d, i) => (
+          <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+            <span style={{ color: '#a4a4ab', minWidth: '60px' }}>{d.name}</span>
+            <strong style={{ color: '#e4e4e9' }}>{d.value}</strong>
+            <span style={{ color: '#6c6c74', fontSize: '12px' }}>{Math.round((d.value / total) * 100)}%</span>
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-function DecisionLegend({ label, count, color }: { label: string, count: number, color: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#888' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} />
-        <span>{label}</span>
-      </div>
-      <b style={{ color: '#ccc', fontFamily: 'monospace' }}>{count}</b>
-    </div>
-  )
-}
+/* ---------- Trust Score Histogram ---------- */
+const HIST_COLORS = ['#ef4444', '#f59e0b', '#f59e0b', '#06b6d4', '#22c55e']
 
 function TrustHistogram({ requests }: { requests: RequestRecord[] }) {
-  const buckets = [0, 0, 0, 0, 0] // 0-20, 20-40, 40-60, 60-80, 80-100
+  const labels = ['0–20', '21–40', '41–60', '61–80', '81–100']
+  const buckets = [0, 0, 0, 0, 0]
   requests.forEach(r => {
     if (r.trust <= 20) buckets[0]++
     else if (r.trust <= 40) buckets[1]++
@@ -228,45 +292,50 @@ function TrustHistogram({ requests }: { requests: RequestRecord[] }) {
     else if (r.trust <= 80) buckets[3]++
     else buckets[4]++
   })
-  const max = Math.max(...buckets, 1)
+
+  if (requests.length === 0) return <div className="chart-empty">No data available</div>
+
+  const data = labels.map((label, i) => ({ range: label, count: buckets[i], fill: HIST_COLORS[i] }))
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '160px', padding: '20px 10px 0', gap: '10px' }}>
-      {buckets.map((count, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', flex: 1 }}>
-          <div style={{ height: '100px', width: '100%', display: 'flex', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-            <div style={{ width: '100%', background: i > 3 ? 'var(--emerald)' : i > 2 ? 'var(--cyan)' : i > 1 ? 'var(--amber)' : 'var(--crimson)', height: `${(count / max) * 100}%`, borderRadius: '4px', opacity: 0.8, transition: 'height 0.3s' }} />
-          </div>
-          <span style={{ fontSize: '9px', color: '#666', fontFamily: 'monospace' }}>{i*20}-{i*20+20}</span>
-        </div>
-      ))}
+    <div style={{ width: '100%', height: '220px', marginTop: '10px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+          <XAxis dataKey="range" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} />
+          <YAxis stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} allowDecimals={false} />
+          <Tooltip cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }} itemStyle={{ color: '#eee' }} contentStyle={{ backgroundColor: 'rgba(20, 20, 23, 0.9)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', color: '#eee' }} />
+          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Requests">
+            {data.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   )
 }
 
-function UseCaseChart({ requests }: { requests: RequestRecord[] }) {
+/* ---------- Use Case Volume Bar Chart ---------- */
+const UC_COLORS = ['#06b6d4', '#a855f7', '#22c55e', '#f59e0b', '#ef4444']
+
+function UseCaseBarChart({ requests }: { requests: RequestRecord[] }) {
   const counts: Record<string, number> = {}
-  requests.forEach(r => {
-    counts[r.useCase] = (counts[r.useCase] || 0) + 1
-  })
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
-  const max = sorted.length > 0 ? sorted[0][1] : 1
-  
-  if (requests.length === 0) return <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>No data</div>
+  requests.forEach(r => { counts[r.useCase] = (counts[r.useCase] || 0) + 1 })
+
+  if (requests.length === 0) return <div className="chart-empty">No data available</div>
+
+  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
-      {sorted.map(([name, count], i) => (
-        <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-            <span style={{ color: '#aaa' }}>{name}</span>
-            <span style={{ fontFamily: 'monospace', color: '#888' }}>{count}</span>
-          </div>
-          <div style={{ height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(count / max) * 100}%`, background: ['var(--cyan)', 'var(--purple)', 'var(--emerald)', 'var(--amber)'][i % 4], borderRadius: '2px' }} />
-          </div>
-        </div>
-      ))}
+    <div style={{ width: '100%', height: '220px', marginTop: '10px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
+          <XAxis type="number" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} allowDecimals={false} />
+          <YAxis type="category" dataKey="name" stroke="#55555c" tick={{ fontSize: 12, fill: '#77777f' }} width={120} />
+          <Tooltip cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }} itemStyle={{ color: '#eee' }} contentStyle={{ backgroundColor: 'rgba(20, 20, 23, 0.9)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '13px', color: '#eee' }} />
+          <Bar dataKey="count" radius={[0, 4, 4, 0]} name="Requests">
+            {data.map((_, i) => <Cell key={i} fill={UC_COLORS[i % UC_COLORS.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   )
 }

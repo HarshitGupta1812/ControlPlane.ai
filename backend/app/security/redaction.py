@@ -11,9 +11,9 @@ class Redaction:
 
 
 EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)")
+PHONE = re.compile(r"(?<!\w)(?:\+\d[\d .()-]{8,}\d|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b|\b\(\d{3}\)\s?\d{3}[-.\s]?\d{4}\b)(?!\w)")
 SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-CARD = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
+CARD = re.compile(r"\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))(?:[ -]?\d{4}){2,3}[ -]?\d{1,4}\b")
 SECRET = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{16,}|pk_[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{20,})\b")
 SENSITIVE_KEY = re.compile(r"^(?:password|secret|token|api[_-]?key|key[_-]?hash|authorization|cookie|access[_-]?token|refresh[_-]?token)$", re.IGNORECASE)
 

@@ -69,7 +69,7 @@ def test_chat_request_rejects_invalid_session_and_oversized_sources() -> None:
     with pytest.raises(ValidationError):
         ChatRequest(prompt="hello", session_id="not-a-uuid")
     with pytest.raises(ValidationError):
-        ChatRequest(prompt="hello", sources=[{"id": "source", "text": "x" * 12_001}])
+        ChatRequest(prompt="hello", sources=[{"id": "source", "text": "x" * 12_001}])  # type: ignore
 
 
 def test_settings_accepts_documented_comma_separated_cors_origins(monkeypatch) -> None:

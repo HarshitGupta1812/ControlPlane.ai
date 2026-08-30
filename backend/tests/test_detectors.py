@@ -1,12 +1,13 @@
 from app.detectors.heuristics import classify_complexity, scan_injection
-from app.detectors.regex_pii import scan_pii
+from app.security.redaction import find_pii
 
 
 def test_regex_pii_returns_entity_types_without_raw_values() -> None:
-    result = scan_pii("Contact maya@example.com or call +1 555 123 4567")
-    assert result["count"] >= 2
-    assert "email" in result["types"]
-    assert all("value" not in finding for finding in result["findings"])
+    findings = find_pii("Contact maya@example.com or call +1 555 123 4567")
+    assert len(findings) >= 2
+    kinds = {f.kind for f in findings}
+    assert "email" in kinds
+    assert all(not hasattr(f, "value") for f in findings)
 
 
 def test_injection_detector_scores_ignore_previous() -> None:

@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut: () => {
       localStorage.removeItem('cp_user')
       localStorage.removeItem('cp_token')
+      sessionStorage.removeItem('cp_last_prompt')
       setUser(null)
     },
   }), [user])

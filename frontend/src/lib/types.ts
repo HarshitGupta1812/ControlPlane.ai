@@ -12,6 +12,7 @@ export interface StageEvent {
   confidence?: string
   detail: string
   tone: Severity
+  rawData?: any
 }
 
 export interface RequestRecord {

@@ -33,9 +33,14 @@ async def lifespan(app: FastAPI):
     yield
 
 
+from starlette.requests import Request
+
+def rate_limit_handler(request: Request, exc: Exception) -> Response:
+    return _rate_limit_exceeded_handler(request, exc)  # type: ignore
+
 app = FastAPI(title="ControlPlane.ai API", version="0.1.0", description="Real-time governance layer for enterprise AI", lifespan=lifespan)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(CorrelationMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"], expose_headers=["X-Request-ID"])

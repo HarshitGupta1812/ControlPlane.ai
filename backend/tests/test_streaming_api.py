@@ -44,11 +44,11 @@ async def test_high_strictness_intervenes_on_medium_toxicity() -> None:
         def fallback_used() -> bool:
             return False
 
-        async def stream(self, prompt, route):
+        async def stream(self, prompt, route, **kwargs):
             yield "violent "
 
     orchestrator = GovernanceOrchestrator()
-    orchestrator.router = UnsafeRouter()
+    orchestrator.router = UnsafeRouter()  # type: ignore
     result = await orchestrator.run("Summarize internal operations", safety_strictness="high")
     assert result.action == "FLAG"
     assert "streaming safety gate" in result.response

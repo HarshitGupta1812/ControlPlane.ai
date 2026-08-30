@@ -69,13 +69,13 @@ export function Traces() {
       </div>
 
       {selected && (
-        <div className="trace-drawer">
-          <div className="trace-drawer-scrim" onClick={() => setSelected(null)} />
-          <div className="trace-drawer-content glass-panel">
+        <>
+          <div className="drawer-backdrop" onClick={() => setSelected(null)} />
+          <div className="trace-drawer">
             <div className="drawer-head">
-              <div>
+              <div style={{ minWidth: 0, paddingRight: '12px' }}>
                 <div className="eyebrow">Request details</div>
-                <h3>{selected.id}</h3>
+                <h3 style={{ wordBreak: 'break-all', fontSize: '15px', marginTop: '6px' }}>{selected.id}</h3>
               </div>
               <div className="drawer-actions">
                 <button className="button button-crimson button-small" onClick={() => navigate(`/app/pipeline-replay?request=${selected.id}`)}>
@@ -85,13 +85,13 @@ export function Traces() {
               </div>
             </div>
             
-            <div className="drawer-body">
-              <section className="drawer-section">
+            <div className="drawer-body" style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <section className="drawer-section" style={{ marginTop: 0 }}>
                 <h4>Prompt</h4>
-                <div className="drawer-prompt">{selected.prompt}</div>
+                <div className="drawer-prompt" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{selected.prompt}</div>
               </section>
               
-              <section className="drawer-section">
+              <section className="drawer-section" style={{ marginTop: 0 }}>
                 <h4>Governance result</h4>
                 <div className="drawer-kpis">
                   <div className="drawer-kpi">
@@ -109,7 +109,7 @@ export function Traces() {
                 </div>
               </section>
               
-              <section className="drawer-section">
+              <section className="drawer-section" style={{ marginTop: 0 }}>
                 <h4>Detected risks</h4>
                 {selected.riskTags.length > 0 ? (
                   <div className="drawer-risks">
@@ -121,7 +121,7 @@ export function Traces() {
                     ))}
                   </div>
                 ) : (
-                  <div className="drawer-risk-item safe">
+                  <div className="drawer-risk-item safe" style={{ borderLeft: '2px solid var(--emerald)', background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
                     <Sparkles size={14} className="text-safe" />
                     <span>No risk signals detected</span>
                   </div>
@@ -129,14 +129,14 @@ export function Traces() {
               </section>
 
               {selected.response && (
-                <section className="drawer-section">
+                <section className="drawer-section" style={{ marginTop: 0 }}>
                   <h4>Generated response</h4>
-                  <div className="drawer-response">{selected.response}</div>
+                  <div className="drawer-response" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{selected.response}</div>
                 </section>
               )}
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
